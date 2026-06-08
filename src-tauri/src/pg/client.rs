@@ -2,7 +2,7 @@ use crate::error::{AppError, AppResult, ErrorKind};
 use serde::Serialize;
 use std::collections::HashMap;
 use tokio::sync::Mutex;
-use tokio_postgres::{Client, NoTls, SimpleQueryMessage};
+use tokio_postgres::{Client, Config, NoTls, SimpleQueryMessage};
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct QueryResult {
@@ -15,9 +15,11 @@ pub struct QueryResult {
 pub struct PgPool { clients: Mutex<HashMap<String, Client>> }
 
 impl PgPool {
-    /// 用 libpq 连接串建立连接并缓存到 id。
-    pub async fn connect(&self, id: &str, conninfo: &str) -> AppResult<()> {
-        let (client, connection) = tokio_postgres::connect(conninfo, NoTls).await
+    /// 用 Config 建立连接并缓存到 id。
+    /// 用 Config(显式 setter)而非手拼连接串:空密码或含特殊字符的库名都能正确处理,
+    /// 避免 `password= dbname=...` 这类空格分隔串在空值时解析丢失 dbname 的问题。
+    pub async fn connect(&self, id: &str, config: &Config) -> AppResult<()> {
+        let (client, connection) = config.connect(NoTls).await
             .map_err(|e| AppError::new(ErrorKind::Connection, "连接 PostgreSQL 失败").with_detail(e.to_string()))?;
         tokio::spawn(async move { let _ = connection.await; });
         self.clients.lock().await.insert(id.to_string(), client);
@@ -87,16 +89,17 @@ impl PgPool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn conninfo() -> String {
+    fn test_config() -> Config {
         std::env::var("DBSTUDIO_TEST_PG")
             .unwrap_or_else(|_| "host=127.0.0.1 port=5432 user=postgres password=postgres dbname=postgres".into())
+            .parse().unwrap()
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore]
     async fn connects_and_queries_users() {
         let pool = PgPool::default();
-        pool.connect("t", &conninfo()).await.unwrap();
+        pool.connect("t", &test_config()).await.unwrap();
         assert!(pool.is_connected("t").await);
         let r = pool.query("t", "SELECT id, name FROM users ORDER BY id").await.unwrap();
         assert_eq!(r.columns, vec!["id", "name"]);
@@ -107,8 +110,28 @@ mod tests {
     #[ignore]
     async fn query_error_surfaces_as_app_error() {
         let pool = PgPool::default();
-        pool.connect("t", &conninfo()).await.unwrap();
+        pool.connect("t", &test_config()).await.unwrap();
         let err = pool.query("t", "SELECT * FROM no_such_table").await.unwrap_err();
         assert_eq!(err.kind, ErrorKind::Query);
+    }
+
+    // 回归:空密码时 dbname 必须被尊重。旧实现手拼 `password= dbname=...` 连接串,
+    // 空密码会让 dbname 丢失、回退到默认 postgres 库。改用 Config 后必须连到指定库。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore]
+    async fn empty_password_respects_dbname() {
+        let admin = PgPool::default();
+        let mut admin_cfg = Config::new();
+        admin_cfg.host("127.0.0.1").port(5432).user("postgres").dbname("postgres").password("");
+        admin.connect("admin", &admin_cfg).await.unwrap();
+        admin.query("admin", "DROP DATABASE IF EXISTS dbstudio_dbname_test").await.ok();
+        admin.query("admin", "CREATE DATABASE dbstudio_dbname_test").await.unwrap();
+
+        let pool = PgPool::default();
+        let mut cfg = Config::new();
+        cfg.host("127.0.0.1").port(5432).user("postgres").dbname("dbstudio_dbname_test").password("");
+        pool.connect("t", &cfg).await.unwrap();
+        let r = pool.query("t", "SELECT current_database()").await.unwrap();
+        assert_eq!(r.rows[0][0].as_deref(), Some("dbstudio_dbname_test"));
     }
 }
