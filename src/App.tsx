@@ -10,6 +10,7 @@ import type { QueryResult, TableDetail as Detail, CellEdit } from "./api/pg";
 import { Modal } from "./components/Modal";
 import { ContextMenu } from "./components/ContextMenu";
 import { SqlView } from "./components/SqlView";
+import { Toaster, toast } from "./components/Toast";
 import { buildCreateTable, buildInsert, buildInsertRow } from "./lib/sqlgen";
 import { copyToClipboard } from "./lib/clipboard";
 import { ConnectionList } from "./components/Sidebar/ConnectionList";
@@ -61,7 +62,9 @@ export default function App() {
   const [tableMenu, setTableMenu] = useState<{ table: string; x: number; y: number } | null>(null);
   const [colMenu, setColMenu] = useState<{ x: number; y: number } | null>(null);
   const [rowMenu, setRowMenu] = useState<{ rowIndex: number; x: number; y: number } | null>(null);
-  const [ddl, setDdl] = useState<{ table: string; sql: string } | null>(null);
+  const [ddl, setDdl] = useState<{ table: string; sql: string; x: number; y: number } | null>(null);
+
+  const copyWithToast = (text: string) => { copyToClipboard(text); toast.success("已复制"); };
 
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -197,19 +200,18 @@ export default function App() {
     refresh();
   };
 
-  // 查看建表语句:取该表详情,合成 DDL 显示在右栏
-  const showDdl = async (table: string) => {
+  // 查看建表语句:取该表详情,合成 DDL,弹出锚定在表名旁的浮层
+  const showDdl = async (table: string, x: number, y: number) => {
     if (!activeId) return;
     try {
       const detail = await pgTableDetail(activeId, table);
-      setDdl({ table, sql: buildCreateTable(table, detail) });
-      rightRef.current?.expand();
+      setDdl({ table, sql: buildCreateTable(table, detail), x, y });
     } catch { /* 忽略 */ }
   };
 
   // 复制当前表的 INSERT 模板
   const copyInsert = () => {
-    if (tab?.detail && tab.table) copyToClipboard(buildInsert(tab.table, tab.detail));
+    if (tab?.detail && tab.table) copyWithToast(buildInsert(tab.table, tab.detail));
   };
 
   // 复制结果某一行的 INSERT(真实值)
@@ -217,7 +219,7 @@ export default function App() {
     if (!tab?.result) return;
     const row = tab.result.rows[rowIndex];
     if (!row) return;
-    copyToClipboard(buildInsertRow(tab.table ?? "table", tab.result.columns, row));
+    copyWithToast(buildInsertRow(tab.table ?? "table", tab.result.columns, row));
   };
 
   return (
@@ -381,7 +383,7 @@ export default function App() {
       {/* 右键表 */}
       {tableMenu && (
         <ContextMenu x={tableMenu.x} y={tableMenu.y} onClose={() => setTableMenu(null)} items={[
-          { label: "查看建表语句", onClick: () => showDdl(tableMenu.table) },
+          { label: "查看建表语句", onClick: () => showDdl(tableMenu.table, tableMenu.x, tableMenu.y) },
         ]} />
       )}
 
@@ -399,24 +401,37 @@ export default function App() {
         ]} />
       )}
 
-      {/* 建表语句浮层 */}
+      {/* 建表语句浮层:带小箭头指向左侧表名 */}
       {ddl && (
-        <Modal onClose={() => setDdl(null)} maxWidth={680}>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
-              <span style={{ fontSize: 13 }}>建表语句 · <b>{ddl.table}</b></span>
+        <>
+          <div onClick={() => setDdl(null)} style={{ position: "fixed", inset: 0, zIndex: 150 }} />
+          <div style={{
+            position: "fixed", left: ddl.x + 8, top: Math.max(8, ddl.y - 18),
+            width: 560, maxWidth: "70vw", zIndex: 151,
+            background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column",
+          }}>
+            {/* 箭头(描边 + 填充两层三角) */}
+            <div style={{ position: "absolute", left: -8, top: 16, width: 0, height: 0,
+              borderTop: "8px solid transparent", borderBottom: "8px solid transparent",
+              borderRight: "8px solid var(--border)" }} />
+            <div style={{ position: "absolute", left: -7, top: 16, width: 0, height: 0,
+              borderTop: "8px solid transparent", borderBottom: "8px solid transparent",
+              borderRight: "8px solid var(--bg)" }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", borderBottom: "1px solid var(--border)" }}>
+              <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>建表语句 · <b style={{ color: "var(--fg)" }}>{ddl.table}</b></span>
               <span style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => copyToClipboard(ddl.sql)} title="复制全部"
-                  style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 8, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>复制</button>
+                <button onClick={() => copyWithToast(ddl.sql)} title="复制全部"
+                  style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 8, padding: "4px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>复制</button>
                 <button onClick={() => setDdl(null)} title="关闭"
-                  style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--fg-muted)" }}>关闭</button>
+                  style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "var(--fg-muted)" }}>关闭</button>
               </span>
             </div>
-            <div style={{ height: "50vh", overflow: "auto" }}>
+            <div style={{ height: "46vh", overflow: "auto" }}>
               <SqlView value={ddl.sql} dark={name === "mirage"} />
             </div>
           </div>
-        </Modal>
+        </>
       )}
 
       {/* 删除二次确认 */}
@@ -443,6 +458,8 @@ export default function App() {
           </div>
         </Modal>
       )}
+
+      <Toaster />
     </div>
   );
 }
