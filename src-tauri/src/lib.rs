@@ -1,16 +1,30 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod error;
 mod core;
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+mod commands;
+
+use commands::AppState;
+use std::sync::Mutex;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .setup(|app| {
+            let config_dir = app.path().app_config_dir()
+                .expect("无法获取应用配置目录");
+            app.manage(AppState {
+                config_dir,
+                backend: crate::core::credentials::KeyringBackend,
+                lock: Mutex::new(()),
+            });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::list_connections,
+            commands::save_connection,
+            commands::delete_connection,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
