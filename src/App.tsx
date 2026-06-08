@@ -30,6 +30,7 @@ export default function App() {
 
   const pkCol = detail?.columns.find((c) => c.isPk)?.name ?? null;
   const dirtyKeys = new Set(Object.keys(dirtyEdits));
+  const activeConn = connections.find((c) => c.id === activeId) ?? null;
 
   const onActivate = async (id: string) => {
     setErr(null);
@@ -39,10 +40,11 @@ export default function App() {
   };
 
   const runSql = async () => {
-    if (!activeId) return;
+    if (!activeId) { setErr("请先在左侧选择一个连接"); return; }
+    if (!sql.trim()) { setErr("SQL 为空"); return; }
     setErr(null);
     try { setResult(await pgQuery(activeId, sql)); }
-    catch (e) { setErr(JSON.stringify(e)); }
+    catch (e) { setResult(null); setErr(JSON.stringify(e)); }
   };
 
   const onSelectTable = async (t: string) => {
@@ -100,13 +102,30 @@ export default function App() {
       </aside>
 
       <main style={{ flex: 1.5, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "5px 10px", fontSize: 12, borderBottom: "1px solid var(--border)",
+                      color: activeConn ? "var(--fg)" : "var(--fg-muted)", background: "var(--bg-panel)" }}>
+          {activeConn
+            ? <span>🔌 {activeConn.name} · 库 <b>{activeConn.database}</b>{activeTable ? ` · 表 ${activeTable}` : ""}</span>
+            : <span>未连接 —— 点左侧连接</span>}
+        </div>
         <div style={{ flex: 1, minHeight: 0 }}>
           <SqlEditor value={sql} onChange={setSql} onRun={runSql} />
         </div>
-        <div style={{ flex: 1.2, minHeight: 0, overflow: "auto" }}>
-          {err && <div style={{ color: "var(--error)", padding: 8, fontSize: 11 }}>{err}</div>}
-          {result && <ResultGrid result={result} pkCol={pkCol} dirtyKeys={dirtyKeys}
-                       onStage={(e) => store.stageEdit({ ...e, table: activeTable ?? "" })} onCommit={commit} />}
+        <div style={{ flex: 1.2, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "4px 10px", fontSize: 11, color: "var(--fg-muted)",
+                        borderBottom: "1px solid var(--border)" }}>
+            {err ? <span style={{ color: "var(--error)" }}>查询出错</span>
+              : result ? `${result.rows.length} 行 · ${result.columns.length} 列${result.affected != null ? ` · 影响 ${result.affected}` : ""}`
+              : activeId ? "就绪,运行 SQL 或点左侧表" : "未连接"}
+          </div>
+          {err && <div style={{ color: "var(--error)", padding: 8, fontSize: 12, whiteSpace: "pre-wrap" }}>{err}</div>}
+          {!err && result && result.rows.length === 0 &&
+            <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 12 }}>查询成功,但没有行(0 行)</div>}
+          {!err && result && result.rows.length > 0 &&
+            <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+              <ResultGrid result={result} pkCol={pkCol} dirtyKeys={dirtyKeys}
+                onStage={(e) => store.stageEdit({ ...e, table: activeTable ?? "" })} onCommit={commit} />
+            </div>}
         </div>
       </main>
 
