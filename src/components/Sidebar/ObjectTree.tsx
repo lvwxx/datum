@@ -11,7 +11,11 @@ export function ObjectTree(props: {
       {props.tables.map((t) => (
         <div key={t}
              onClick={() => props.onSelect(t)}
-             onContextMenu={(e) => { e.preventDefault(); props.onContext?.(t, e.clientX, e.clientY); }}
+             onContextMenu={(e) => {
+               e.preventDefault();
+               const r = e.currentTarget.getBoundingClientRect();
+               props.onContext?.(t, r.right, r.top + r.height / 2);
+             }}
              style={{
                padding: "3px 8px 3px 28px", cursor: "pointer", fontSize: 12,
                display: "flex", alignItems: "center", gap: 4, overflow: "hidden",
