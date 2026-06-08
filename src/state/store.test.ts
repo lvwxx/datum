@@ -1,7 +1,7 @@
 import { test, expect, beforeEach } from "vitest";
 import { useStore } from "./store";
 
-beforeEach(() => useStore.setState({ connections: [], activeId: null, activeTable: null }));
+beforeEach(() => useStore.setState({ connections: [], activeId: null, activeTable: null, dirtyEdits: {} }));
 
 test("setConnections and activate", () => {
   const c = { id: "c1", name: "n", kind: "pg", env: "local", host: "h",
@@ -15,4 +15,12 @@ test("setConnections and activate", () => {
 test("selectTable sets activeTable", () => {
   useStore.getState().selectTable("users");
   expect(useStore.getState().activeTable).toBe("users");
+});
+
+test("stageEdit accumulates and clearEdits resets", () => {
+  const e = { table: "users", pkCol: "id", pkValue: "2", column: "name", newValue: "X" };
+  useStore.getState().stageEdit(e);
+  expect(Object.keys(useStore.getState().dirtyEdits)).toHaveLength(1);
+  useStore.getState().clearEdits();
+  expect(useStore.getState().dirtyEdits).toEqual({});
 });
