@@ -28,6 +28,31 @@ impl PgPool {
         self.clients.lock().await.contains_key(id)
     }
 
+    /// 在一个事务里批量执行编辑(全成功或全回滚)。返回受影响行数。
+    pub async fn with_txn(&self, id: &str, edits: &[crate::pg::edit::CellEdit]) -> AppResult<u64> {
+        let mut guard = self.clients.lock().await;
+        let client = guard.get_mut(id)
+            .ok_or_else(|| AppError::new(ErrorKind::Connection, "连接未建立,请先连接"))?;
+        let txn = client.transaction().await
+            .map_err(|e| AppError::new(ErrorKind::Edit, "开启事务失败").with_detail(e.to_string()))?;
+        let mut n = 0u64;
+        for e in edits {
+            // pk_value 内联为字面量(避免类型推断问题),new_value 用 $1 参数传递
+            let sql = format!(
+                "UPDATE \"{}\" SET \"{}\" = $1 WHERE \"{}\" = '{}'",
+                e.table.replace('"', "\"\""),
+                e.column.replace('"', "\"\""),
+                e.pk_col.replace('"', "\"\""),
+                e.pk_value.replace('\'', "''"));
+            let affected = txn.execute(&sql, &[&e.new_value]).await
+                .map_err(|err| AppError::new(ErrorKind::Edit, "更新失败").with_detail(err.to_string()))?;
+            n += affected;
+        }
+        txn.commit().await
+            .map_err(|e| AppError::new(ErrorKind::Edit, "提交事务失败").with_detail(e.to_string()))?;
+        Ok(n)
+    }
+
     /// 执行任意 SQL,文本协议返回。
     pub async fn query(&self, id: &str, sql: &str) -> AppResult<QueryResult> {
         let guard = self.clients.lock().await;
