@@ -1,26 +1,21 @@
 import CodeMirror from "@uiw/react-codemirror";
 import { sql, PostgreSQL } from "@codemirror/lang-sql";
 
+/** SQL 编辑器,填满容器高度。运行按钮在结果栏,这里只保留 ⌘↵ 快捷键。 */
 export function SqlEditor(props: {
   value: string;
   onChange: (v: string) => void;
   onRun: () => void;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "6px 8px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--border)" }}>
-        <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>⌨ SQL</span>
-        <button onClick={props.onRun}
-          style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 4, padding: "2px 10px", fontSize: 11 }}>
-          ▶ 运行 ⌘↵
-        </button>
-      </div>
+    <div style={{ height: "100%", overflow: "auto" }}
+         onKeyDown={(e) => { if (e.metaKey && e.key === "Enter") { e.preventDefault(); props.onRun(); } }}>
       <CodeMirror
         value={props.value}
-        height="160px"
+        height="100%"
+        style={{ height: "100%" }}
         extensions={[sql({ dialect: PostgreSQL })]}
         onChange={props.onChange}
-        onKeyDown={(e) => { if (e.metaKey && e.key === "Enter") { e.preventDefault(); props.onRun(); } }}
       />
     </div>
   );
