@@ -263,7 +263,7 @@ export default function App() {
             <div style={{ padding: 8, flexShrink: 0, borderTop: "1px solid var(--border)" }}>
               <button onClick={toggle} title="切换主题"
                 style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 10, cursor: "pointer", padding: "4px 10px", fontSize: 15 }}>
-                {name === "light" ? "☀️" : "🌙"}
+                {name === "light" ? "🌙" : "☀️"}
               </button>
             </div>
           </aside>
