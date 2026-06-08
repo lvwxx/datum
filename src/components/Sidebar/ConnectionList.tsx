@@ -8,6 +8,7 @@ export function ConnectionList(props: {
   connections: Connection[];
   activeId: string | null;
   onPick: (id: string) => void;
+  onEdit: (c: Connection) => void;
 }) {
   return (
     <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
@@ -24,6 +25,14 @@ export function ConnectionList(props: {
             background: envVar[c.env], color: "#fff", fontSize: 9,
             padding: "0 5px", borderRadius: 3,
           }}>{c.env.toUpperCase()}</span>
+          <button
+            title="编辑"
+            aria-label={`编辑 ${c.name}`}
+            onClick={(e) => { e.stopPropagation(); props.onEdit(c); }}
+            style={{
+              marginLeft: "auto", background: "transparent", border: 0,
+              color: "var(--fg-muted)", cursor: "pointer", fontSize: 12, padding: 0,
+            }}>✎</button>
         </li>
       ))}
     </ul>

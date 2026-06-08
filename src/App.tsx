@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "./theme/ThemeProvider";
 import { useStore } from "./state/store";
-import { listConnections, saveConnection } from "./api/connections";
+import { listConnections, saveConnection, deleteConnection } from "./api/connections";
 import { pgConnect, pgListObjects, pgQuery, pgTableDetail, pgCommitEdits } from "./api/pg";
 import type { QueryResult, TableDetail as Detail } from "./api/pg";
+import { Modal } from "./components/Modal";
 import { ConnectionList } from "./components/Sidebar/ConnectionList";
 import { ConnectionForm } from "./components/Sidebar/ConnectionForm";
 import { ObjectTree } from "./components/Sidebar/ObjectTree";
@@ -16,7 +17,8 @@ export default function App() {
   const { name, toggle } = useTheme();
   const store = useStore();
   const { connections, activeId, activeTable, dirtyEdits } = store;
-  const [showForm, setShowForm] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editConn, setEditConn] = useState<Connection | null>(null);
   const [tables, setTables] = useState<string[]>([]);
   const [sql, setSql] = useState("");
   const [result, setResult] = useState<QueryResult | null>(null);
@@ -65,11 +67,22 @@ export default function App() {
     } catch (e) { setErr(JSON.stringify(e)); }
   };
 
+  const openNew = () => { setEditConn(null); setFormOpen(true); };
+  const openEdit = (c: Connection) => { setEditConn(c); setFormOpen(true); };
+  const closeForm = () => { setFormOpen(false); setEditConn(null); };
+
   const onSubmit = async (conn: Connection, pw: string) => {
-    // 始终传密码(含空串):空密码会作为有效凭据存下,而非"不设置密码",
-    // 这样 local 无密码/trust 认证的连接也能建立。
-    await saveConnection(conn, pw);
-    setShowForm(false); refresh();
+    // 新增:始终传密码(含空串),空密码作为有效凭据存下(支持 local 无密码/trust 认证)。
+    // 编辑:密码框留空表示"不修改",传 undefined 让后端沿用原密码;非空才更新。
+    const password = editConn ? (pw === "" ? undefined : pw) : pw;
+    await saveConnection(conn, password);
+    closeForm(); refresh();
+  };
+
+  const onDelete = async () => {
+    if (!editConn) return;
+    await deleteConnection(editConn.id);
+    closeForm(); refresh();
   };
 
   return (
@@ -77,11 +90,10 @@ export default function App() {
       <aside style={{ width: 200, background: "var(--bg-panel)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column" }}>
         <div style={{ padding: 8, display: "flex", justifyContent: "space-between" }}>
           <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>连接</span>
-          <button onClick={() => setShowForm(true)}>＋</button>
+          <button onClick={openNew} title="新建连接">＋</button>
         </div>
-        <ConnectionList connections={connections} activeId={activeId} onPick={onActivate} />
+        <ConnectionList connections={connections} activeId={activeId} onPick={onActivate} onEdit={openEdit} />
         {activeId && <ObjectTree tables={tables} active={activeTable} onSelect={onSelectTable} />}
-        {showForm && <ConnectionForm onSubmit={onSubmit} onCancel={() => setShowForm(false)} />}
         <div style={{ marginTop: "auto", padding: 8 }}>
           <button onClick={toggle}>主题:{name}</button>
         </div>
@@ -103,6 +115,18 @@ export default function App() {
           ? <TableDetail detail={detail} table={activeTable} />
           : <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 10 }}>详情</div>}
       </aside>
+
+      {formOpen && (
+        <Modal onClose={closeForm}>
+          <ConnectionForm
+            key={editConn?.id ?? "new"}
+            initial={editConn ?? undefined}
+            onSubmit={onSubmit}
+            onCancel={closeForm}
+            onDelete={editConn ? onDelete : undefined}
+          />
+        </Modal>
+      )}
     </div>
   );
 }
