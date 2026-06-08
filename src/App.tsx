@@ -66,7 +66,9 @@ export default function App() {
   };
 
   const onSubmit = async (conn: Connection, pw: string) => {
-    await saveConnection(conn, pw || undefined);
+    // 始终传密码(含空串):空密码会作为有效凭据存下,而非"不设置密码",
+    // 这样 local 无密码/trust 认证的连接也能建立。
+    await saveConnection(conn, pw);
     setShowForm(false); refresh();
   };
 
