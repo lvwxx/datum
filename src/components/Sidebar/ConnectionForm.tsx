@@ -10,10 +10,12 @@ export function ConnectionForm(props: {
   initial?: Connection;
   onSubmit: (conn: Connection, password: string) => void;
   onCancel: () => void;
+  onDelete?: () => void;
 }) {
   const [c, setC] = useState<Connection>(props.initial ?? blank);
   const [pw, setPw] = useState("");
   const upd = (k: keyof Connection, v: string | number) => setC({ ...c, [k]: v });
+  const isEdit = !!props.initial;
 
   const labelStyle = { display: "grid", gap: 2 } as const;
   const captionStyle = { fontSize: 10, color: "var(--fg-muted)" } as const;
@@ -63,13 +65,22 @@ export function ConnectionForm(props: {
       </label>
 
       <label style={labelStyle}>
-        <span style={captionStyle}>密码(可留空)</span>
-        <input type="password" placeholder="留空表示无密码" value={pw} onChange={(e) => setPw(e.target.value)} />
+        <span style={captionStyle}>{isEdit ? "密码(留空 = 不修改)" : "密码(可留空)"}</span>
+        <input type="password"
+               placeholder={isEdit ? "留空表示不修改密码" : "留空表示无密码"}
+               value={pw} onChange={(e) => setPw(e.target.value)} />
       </label>
 
-      <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+      <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
         <button type="submit" style={{ background: "var(--accent)", color: "#fff", border: 0, padding: "4px 10px", borderRadius: 4 }}>保存</button>
         <button type="button" onClick={props.onCancel}>取消</button>
+        {isEdit && props.onDelete && (
+          <button type="button" onClick={props.onDelete}
+            style={{ marginLeft: "auto", background: "transparent", border: "1px solid var(--error)",
+                     color: "var(--error)", padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>
+            删除
+          </button>
+        )}
       </div>
     </form>
   );
