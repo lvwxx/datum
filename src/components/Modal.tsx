@@ -15,8 +15,8 @@ export function Modal(props: { onClose: () => void; children: ReactNode }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "var(--bg)", color: "var(--fg)",
-          border: "1px solid var(--border)", borderRadius: 8,
-          minWidth: 300, maxWidth: 380,
+          border: "1px solid var(--border)", borderRadius: 10,
+          minWidth: 380, maxWidth: 480, width: "90%",
           boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
         }}
       >

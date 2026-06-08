@@ -28,11 +28,10 @@ pub fn save_password<B: SecretBackend>(
     Ok(conn)
 }
 
-/// 取密码:Local 从明文字段;其余从密钥串。
+/// 取密码:Local 从明文字段(缺失则视为空密码,支持无密码/trust 认证);其余从密钥串。
 pub fn load_password<B: SecretBackend>(backend: &B, conn: &Connection) -> AppResult<String> {
     if conn.env.stores_password_in_plaintext() {
-        conn.plaintext_password.clone()
-            .ok_or_else(|| AppError::new(ErrorKind::Credential, "本地连接缺少明文密码"))
+        Ok(conn.plaintext_password.clone().unwrap_or_default())
     } else {
         backend.get(SERVICE, &account_key(conn))?
             .ok_or_else(|| AppError::new(ErrorKind::Credential, "钥匙串中未找到该连接的密码"))
@@ -104,6 +103,14 @@ mod tests {
         assert_eq!(saved.plaintext_password.as_deref(), Some("pw"));
         assert!(b.store.borrow().is_empty());
         assert_eq!(load_password(&b, &saved).unwrap(), "pw");
+    }
+
+    #[test]
+    fn local_missing_plaintext_is_empty_password() {
+        // 旧连接或无密码的 local 连接:缺明文不再报错,视为空密码
+        let b = FakeBackend::default();
+        let c = conn(Env::Local); // plaintext_password: None
+        assert_eq!(load_password(&b, &c).unwrap(), "");
     }
 
     #[test]
