@@ -1,5 +1,8 @@
 import { useState } from "react";
 import type { QueryResult, CellEdit } from "../../api/pg";
+import { Modal } from "../Modal";
+
+const CELL_MAX_WIDTH = 240;
 
 export function ResultGrid(props: {
   result: QueryResult;
@@ -10,12 +13,24 @@ export function ResultGrid(props: {
 }) {
   const { columns, rows } = props.result;
   const pkIndex = props.pkCol ? columns.indexOf(props.pkCol) : -1;
-  const [editing, setEditing] = useState<{ r: number; c: number } | null>(null);
+  const editable = pkIndex >= 0;
+  const [selectedRow, setSelectedRow] = useState<number | null>(null);
+  const [cell, setCell] = useState<{ r: number; c: number } | null>(null);
+  const [draft, setDraft] = useState("");
 
-  const onCellChange = (rowIdx: number, colIdx: number, value: string) => {
-    if (pkIndex < 0) return;
-    const pkValue = rows[rowIdx][pkIndex] ?? "";
-    props.onStage({ pkCol: props.pkCol!, pkValue, column: columns[colIdx], newValue: value });
+  const openCell = (r: number, c: number) => { setCell({ r, c }); setDraft(rows[r][c] ?? ""); };
+  const applyEdit = () => {
+    if (!cell || !editable) return;
+    const pkValue = rows[cell.r][pkIndex] ?? "";
+    props.onStage({ pkCol: props.pkCol!, pkValue, column: columns[cell.c], newValue: draft });
+    setCell(null);
+  };
+
+  const thStyle = {
+    padding: "4px 6px", fontWeight: 600, color: "var(--fg-muted)", textAlign: "left" as const,
+    position: "sticky" as const, top: 0, zIndex: 1, background: "var(--bg-panel)",
+    borderRight: "1px solid var(--border)", borderBottom: "2px solid var(--border)",
+    whiteSpace: "nowrap" as const,
   };
 
   return (
@@ -23,49 +38,79 @@ export function ResultGrid(props: {
          onKeyDown={(e) => { if (e.metaKey && e.key.toLowerCase() === "s") { e.preventDefault(); props.onCommit(); } }}
          style={{ outline: "none" }}>
       {props.pkCol === null &&
-        <div style={{ color: "var(--error)", fontSize: 11, marginBottom: 6 }}>该结果无主键,暂不可编辑</div>}
-      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+        <div style={{ color: "var(--fg-muted)", fontSize: 11, padding: "4px 8px" }}>该结果无主键,双击可查看完整内容,暂不可编辑</div>}
+      <table style={{ borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
-          <tr style={{ textAlign: "left" }}>
-            {columns.map((c, i) => (
-              <th key={`${c}-${i}`}
-                  style={{
-                    padding: 4, fontWeight: 600, color: "var(--fg-muted)",
-                    position: "sticky", top: 0, zIndex: 1,
-                    background: "var(--bg-panel)",
-                    borderBottom: "2px solid var(--border)",
-                    whiteSpace: "nowrap",
-                  }}>{c}</th>
-            ))}
+          <tr>
+            {columns.map((c, i) => <th key={`${c}-${i}`} style={thStyle}>{c}</th>)}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, ri) => (
-            <tr key={ri} style={{ borderTop: "1px solid var(--border)" }}>
-              {row.map((cell, ci) => {
-                const pkValue = pkIndex >= 0 ? row[pkIndex] ?? "" : "";
-                const dirty = props.dirtyKeys.has(`${pkValue}|${columns[ci]}`);
-                const isEditing = editing?.r === ri && editing?.c === ci;
-                return (
-                  <td key={ci}
-                      onDoubleClick={() => props.pkCol && setEditing({ r: ri, c: ci })}
-                      style={{
-                        padding: 4,
-                        background: dirty ? "var(--dirty-bg)" : "transparent",
-                        border: dirty ? "1px solid var(--accent)" : undefined,
+          {rows.map((row, ri) => {
+            const selected = selectedRow === ri;
+            return (
+              <tr key={ri} onClick={() => setSelectedRow(ri)}>
+                {row.map((cellVal, ci) => {
+                  const pkValue = pkIndex >= 0 ? row[pkIndex] ?? "" : "";
+                  const dirty = props.dirtyKeys.has(`${pkValue}|${columns[ci]}`);
+                  const bg = dirty ? "var(--dirty-bg)" : selected ? "var(--selection)" : "transparent";
+                  return (
+                    <td key={ci}
+                        onDoubleClick={() => openCell(ri, ci)}
+                        title="双击查看完整内容"
+                        style={{
+                          padding: 0, background: bg,
+                          borderRight: "1px solid var(--border)",
+                          borderBottom: "1px solid var(--border)",
+                          boxShadow: dirty ? "inset 0 0 0 1px var(--accent)" : undefined,
+                        }}>
+                      <div style={{
+                        maxWidth: CELL_MAX_WIDTH, padding: "3px 6px",
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                       }}>
-                    {isEditing ? (
-                      <input autoFocus defaultValue={cell ?? ""}
-                        onBlur={(e) => { onCellChange(ri, ci, e.target.value); setEditing(null); }}
-                        style={{ width: "100%", font: "inherit" }} />
-                    ) : (cell ?? <span style={{ color: "var(--fg-muted)" }}>NULL</span>)}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+                        {cellVal ?? <span style={{ color: "var(--fg-muted)" }}>NULL</span>}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+
+      {cell && (
+        <Modal onClose={() => setCell(null)}>
+          <div style={{ padding: 14, display: "grid", gap: 10, minWidth: 380, maxWidth: 600 }}>
+            <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>
+              列 <b style={{ color: "var(--fg)" }}>{columns[cell.c]}</b>
+              {editable ? "" : " · 仅查看(无主键)"}
+            </div>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              readOnly={!editable}
+              spellCheck={false}
+              autoFocus
+              style={{
+                width: "100%", minHeight: 220, boxSizing: "border-box", padding: 10,
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13,
+                lineHeight: 1.5, resize: "vertical",
+                background: "var(--bg)", color: "var(--fg)",
+                border: "1px solid var(--border)", borderRadius: 6,
+              }} />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              {editable && (
+                <button onClick={applyEdit}
+                  style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 4, padding: "5px 14px", cursor: "pointer" }}>
+                  暂存修改
+                </button>
+              )}
+              <button onClick={() => setCell(null)} style={{ padding: "5px 14px" }}>关闭</button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
