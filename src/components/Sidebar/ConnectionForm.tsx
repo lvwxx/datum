@@ -17,8 +17,21 @@ export function ConnectionForm(props: {
   const upd = (k: keyof Connection, v: string | number) => setC({ ...c, [k]: v });
   const isEdit = !!props.initial;
 
-  const labelStyle = { display: "grid", gap: 2 } as const;
-  const captionStyle = { fontSize: 10, color: "var(--fg-muted)" } as const;
+  const field = { display: "grid", gap: 5 } as const;
+  const caption = { fontSize: 12, color: "var(--fg)", fontWeight: 600 } as const; // 配置名:最深
+
+  const primaryBtn: React.CSSProperties = {
+    background: "var(--accent)", color: "#fff", border: 0, borderRadius: 12,
+    padding: "9px 20px", cursor: "pointer", fontWeight: 600,
+  };
+  const ghostBtn: React.CSSProperties = {
+    background: "transparent", color: "var(--fg-muted)", border: "1px solid var(--border)",
+    borderRadius: 12, padding: "9px 18px", cursor: "pointer",
+  };
+  const dangerBtn: React.CSSProperties = {
+    marginLeft: "auto", background: "transparent", color: "var(--error)",
+    border: "1px solid transparent", borderRadius: 12, padding: "9px 14px", cursor: "pointer",
+  };
 
   return (
     <form onSubmit={(e) => {
@@ -26,17 +39,17 @@ export function ConnectionForm(props: {
         const id = c.id || crypto.randomUUID();
         props.onSubmit({ ...c, id }, pw);
       }}
-      style={{ display: "grid", gap: 6, padding: 8 }}>
-      <div style={{ fontSize: 11, fontWeight: 600 }}>{props.initial ? "编辑连接" : "新建连接"}</div>
+      style={{ display: "grid", gap: 14, padding: 20 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--fg)" }}>{isEdit ? "编辑连接" : "新建连接"}</div>
 
-      <label style={labelStyle}>
-        <span style={captionStyle}>名称</span>
+      <label style={field}>
+        <span style={caption}>名称</span>
         <input placeholder="例如 prod-pg" value={c.name} onChange={(e) => upd("name", e.target.value)}
                autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
       </label>
 
-      <label style={labelStyle}>
-        <span style={captionStyle}>环境</span>
+      <label style={field}>
+        <span style={caption}>环境</span>
         <select value={c.env} onChange={(e) => upd("env", e.target.value as Env)}>
           <option value="local">local</option>
           <option value="staging">staging</option>
@@ -44,46 +57,42 @@ export function ConnectionForm(props: {
         </select>
       </label>
 
-      <label style={labelStyle}>
-        <span style={captionStyle}>主机</span>
+      <label style={field}>
+        <span style={caption}>主机</span>
         <input placeholder="127.0.0.1" value={c.host} onChange={(e) => upd("host", e.target.value)}
                autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       </label>
 
-      <label style={labelStyle}>
-        <span style={captionStyle}>端口</span>
+      <label style={field}>
+        <span style={caption}>端口</span>
         <input type="number" placeholder="5432" value={c.port}
                onChange={(e) => upd("port", Number(e.target.value))} />
       </label>
 
-      <label style={labelStyle}>
-        <span style={captionStyle}>用户</span>
+      <label style={field}>
+        <span style={caption}>用户</span>
         <input placeholder="postgres" value={c.user} onChange={(e) => upd("user", e.target.value)}
                autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       </label>
 
-      <label style={labelStyle}>
-        <span style={captionStyle}>数据库</span>
+      <label style={field}>
+        <span style={caption}>数据库</span>
         <input placeholder="postgres" value={c.database} onChange={(e) => upd("database", e.target.value)}
                autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       </label>
 
-      <label style={labelStyle}>
-        <span style={captionStyle}>{isEdit ? "密码(留空 = 不修改)" : "密码(可留空)"}</span>
+      <label style={field}>
+        <span style={caption}>密码</span>
         <input type="password"
                placeholder={isEdit ? "留空表示不修改密码" : "留空表示无密码"}
                value={pw} onChange={(e) => setPw(e.target.value)} />
       </label>
 
-      <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
-        <button type="submit" style={{ background: "var(--accent)", color: "#fff", border: 0, padding: "4px 10px", borderRadius: 4 }}>保存</button>
-        <button type="button" onClick={props.onCancel}>取消</button>
+      <div style={{ display: "flex", gap: 8, marginTop: 4, alignItems: "center" }}>
+        <button type="submit" style={primaryBtn}>保存</button>
+        <button type="button" onClick={props.onCancel} style={ghostBtn}>取消</button>
         {isEdit && props.onDelete && (
-          <button type="button" onClick={props.onDelete}
-            style={{ marginLeft: "auto", background: "transparent", border: "1px solid var(--error)",
-                     color: "var(--error)", padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>
-            删除
-          </button>
+          <button type="button" onClick={props.onDelete} style={dangerBtn}>删除</button>
         )}
       </div>
     </form>

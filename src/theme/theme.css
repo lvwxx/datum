@@ -7,6 +7,22 @@ body {
   font-size: 15px;
 }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-/* 表单控件继承字号,避免默认偏小 */
+/* 表单控件:继承字号 + 现代化样式 */
 input, select, button, textarea { font-size: inherit; font-family: inherit; }
-input, select { padding: 4px 6px; }
+input, select, textarea {
+  color: var(--fg-soft);              /* 值:稍淡于配置名 */
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 7px 10px;
+  box-sizing: border-box;
+  transition: border-color 0.12s ease;
+}
+input::placeholder, textarea::placeholder {
+  color: var(--fg-muted);             /* 空值:最淡 */
+  opacity: 0.75;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
