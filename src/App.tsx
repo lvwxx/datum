@@ -5,7 +5,7 @@ import { useTheme } from "./theme/ThemeProvider";
 import { useStore } from "./state/store";
 import { listConnections, saveConnection, deleteConnection } from "./api/connections";
 import { pgConnect, pgListObjects, pgQuery, pgTableDetail, pgCommitEdits } from "./api/pg";
-import type { QueryResult, TableDetail as Detail } from "./api/pg";
+import type { QueryResult, TableDetail as Detail, CellEdit } from "./api/pg";
 import { Modal } from "./components/Modal";
 import { ConnectionList } from "./components/Sidebar/ConnectionList";
 import { ConnectionForm } from "./components/Sidebar/ConnectionForm";
@@ -17,50 +17,64 @@ import type { Connection } from "./types";
 
 const PAGE_SIZE = 100;
 
-/** 横向分组里的竖直拖动条 */
+/** 一个工作标签页:绑定连接,持有各自的 SQL / 结果 / 分页 / 暂存编辑 */
+interface Tab {
+  id: string;
+  connId: string;
+  title: string;
+  table: string | null;       // 编辑目标表(点表打开时)
+  sql: string;
+  result: QueryResult | null;
+  detail: Detail | null;
+  page: number;
+  browseTable: string | null; // 非空表示处于分页浏览
+  dirty: Record<string, CellEdit>;
+  err: string | null;
+}
+
 function HHandle() {
   return <PanelResizeHandle style={{ width: 5, background: "var(--border)", cursor: "col-resize" }} />;
 }
-/** 纵向分组里的水平拖动条 */
 function VHandle() {
   return <PanelResizeHandle style={{ height: 5, background: "var(--border)", cursor: "row-resize" }} />;
 }
 
+const pageSql = (t: string, p: number) => `SELECT * FROM "${t}" LIMIT ${PAGE_SIZE} OFFSET ${p * PAGE_SIZE}`;
+
 export default function App() {
   const { name, toggle } = useTheme();
   const store = useStore();
-  const { connections, activeId, activeTable, dirtyEdits } = store;
+  const { connections, activeId } = store;
   const [formOpen, setFormOpen] = useState(false);
   const [editConn, setEditConn] = useState<Connection | null>(null);
   const [tables, setTables] = useState<string[]>([]);
-  const [sql, setSql] = useState("");
-  const [result, setResult] = useState<QueryResult | null>(null);
-  const [detail, setDetail] = useState<Detail | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [browseTable, setBrowseTable] = useState<string | null>(null); // 正在分页浏览的表;手动 SQL 时为 null
-  const [page, setPage] = useState(0);
-  const [treeOpen, setTreeOpen] = useState(true); // 当前连接的表树是否展开
+  const [treeOpen, setTreeOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const rightRef = useRef<ImperativePanelHandle>(null);
+
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const tab = tabs.find((t) => t.id === activeTabId) ?? null;
 
   const refresh = () => listConnections().then(store.setConnections);
   useEffect(() => { refresh(); }, []);
 
-  const pkCol = detail?.columns.find((c) => c.isPk)?.name ?? null;
-  const dirtyKeys = new Set(Object.keys(dirtyEdits));
-  const activeConn = connections.find((c) => c.id === activeId) ?? null;
-  const canNext = browseTable !== null && result !== null && result.rows.length === PAGE_SIZE;
-  const canPrev = browseTable !== null && page > 0;
+  const patch = (id: string, p: Partial<Tab>) =>
+    setTabs((ts) => ts.map((t) => (t.id === id ? { ...t, ...p } : t)));
+
+  const tabConn = connections.find((c) => c.id === tab?.connId) ?? null;
+  const headConn = tabConn ?? connections.find((c) => c.id === activeId) ?? null;
+  const pkCol = tab?.detail?.columns.find((c) => c.isPk)?.name ?? null;
+  const dirtyKeys = new Set(Object.keys(tab?.dirty ?? {}));
+  const canNext = !!tab && tab.browseTable !== null && tab.result !== null && tab.result.rows.length === PAGE_SIZE;
+  const canPrev = !!tab && tab.browseTable !== null && tab.page > 0;
 
   const onActivate = async (id: string) => {
-    setErr(null);
     store.activate(id);
-    setBrowseTable(null); setResult(null); setDetail(null); setPage(0);
     try { await pgConnect(id); setTables(await pgListObjects(id)); }
-    catch (e) { setErr(JSON.stringify(e)); }
+    catch { setTables([]); }
   };
 
-  // 点连接名:未激活则激活+连接并展开表树;已激活则切换展开/收起
   const onPickConn = async (id: string) => {
     if (id === activeId) { setTreeOpen((o) => !o); return; }
     setTreeOpen(true);
@@ -73,50 +87,68 @@ export default function App() {
     if (p.isCollapsed()) p.expand(); else p.collapse();
   };
 
-  const loadTablePage = async (t: string, p: number) => {
-    if (!activeId) return;
-    const q = `SELECT * FROM "${t}" LIMIT ${PAGE_SIZE} OFFSET ${p * PAGE_SIZE}`;
-    setSql(q);
-    setResult(await pgQuery(activeId, q));
-  };
-
+  // 点表:每次都新开一个 tab
   const onSelectTable = async (t: string) => {
     if (!activeId) return;
-    setErr(null);
-    store.selectTable(t);
-    store.clearEdits();
-    setBrowseTable(t); setPage(0);
+    const id = crypto.randomUUID();
+    const sql = pageSql(t, 0);
+    const fresh: Tab = {
+      id, connId: activeId, title: t, table: t, sql,
+      result: null, detail: null, page: 0, browseTable: t, dirty: {}, err: null,
+    };
+    setTabs((ts) => [...ts, fresh]);
+    setActiveTabId(id);
     try {
-      await loadTablePage(t, 0);
-      setDetail(await pgTableDetail(activeId, t));
-    } catch (e) { setResult(null); setErr(JSON.stringify(e)); }
+      const result = await pgQuery(activeId, sql);
+      const detail = await pgTableDetail(activeId, t);
+      patch(id, { result, detail });
+    } catch (e) { patch(id, { err: JSON.stringify(e) }); }
   };
 
   const gotoPage = async (p: number) => {
-    if (!activeId || !browseTable || p < 0) return;
-    setErr(null);
-    try { setPage(p); await loadTablePage(browseTable, p); }
-    catch (e) { setErr(JSON.stringify(e)); }
+    if (!tab || tab.browseTable === null || p < 0) return;
+    const sql = pageSql(tab.browseTable, p);
+    try {
+      const result = await pgQuery(tab.connId, sql);
+      patch(tab.id, { page: p, sql, result, err: null });
+    } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
 
   const runSql = async () => {
-    if (!activeId) { setErr("请先在左侧选择一个连接"); return; }
-    if (!sql.trim()) { setErr("SQL 为空"); return; }
-    setErr(null);
-    setBrowseTable(null); setPage(0); // 手动 SQL 不参与分页
-    try { setResult(await pgQuery(activeId, sql)); }
-    catch (e) { setResult(null); setErr(JSON.stringify(e)); }
+    if (!tab) return;
+    if (!tab.sql.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
+    try {
+      const result = await pgQuery(tab.connId, tab.sql);
+      patch(tab.id, { result, err: null, browseTable: null, page: 0 });
+    } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
+  };
+
+  const stageEdit = (e: Omit<CellEdit, "table">) => {
+    if (!tab) return;
+    const key = `${e.pkValue}|${e.column}`;
+    patch(tab.id, { dirty: { ...tab.dirty, [key]: { ...e, table: tab.table ?? "" } } });
   };
 
   const commit = async () => {
-    if (!activeId || !activeTable) return;
-    const edits = Object.values(dirtyEdits).map((e) => ({ ...e, table: activeTable }));
+    if (!tab || !tab.table) return;
+    const edits = Object.values(tab.dirty);
+    if (edits.length === 0) return;
     try {
-      await pgCommitEdits(activeId, edits);
-      store.clearEdits();
-      if (browseTable) await loadTablePage(browseTable, page);
-      else setResult(await pgQuery(activeId, sql));
-    } catch (e) { setErr(JSON.stringify(e)); }
+      await pgCommitEdits(tab.connId, edits.map((e) => ({ ...e, table: tab.table! })));
+      const sql = tab.browseTable ? pageSql(tab.browseTable, tab.page) : tab.sql;
+      const result = await pgQuery(tab.connId, sql);
+      patch(tab.id, { dirty: {}, result, sql, err: null });
+    } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
+  };
+
+  const closeTab = (id: string) => {
+    const idx = tabs.findIndex((t) => t.id === id);
+    const next = tabs.filter((t) => t.id !== id);
+    setTabs(next);
+    if (activeTabId === id) {
+      const neighbor = next[idx] ?? next[idx - 1] ?? null;
+      setActiveTabId(neighbor ? neighbor.id : null);
+    }
   };
 
   const openNew = () => { setEditConn(null); setFormOpen(true); };
@@ -124,7 +156,6 @@ export default function App() {
   const closeForm = () => { setFormOpen(false); setEditConn(null); };
 
   const onSubmit = async (conn: Connection, pw: string) => {
-    // 新增:始终传密码(含空串)。编辑:留空表示不修改(传 undefined),非空才更新。
     const password = editConn ? (pw === "" ? undefined : pw) : pw;
     await saveConnection(conn, password);
     closeForm(); refresh();
@@ -139,7 +170,7 @@ export default function App() {
   return (
     <div style={{ height: "100vh" }}>
       <PanelGroup direction="horizontal" autoSaveId="dbstudio-cols">
-        {/* 左栏:连接(可滚动) + 表树(独立滚动,固定头尾) */}
+        {/* 左栏 */}
         <Panel defaultSize={18} minSize={10}>
           <aside style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg-panel)", overflow: "hidden" }}>
             <div style={{ padding: 8, display: "flex", justifyContent: "space-between", flexShrink: 0 }}>
@@ -155,7 +186,7 @@ export default function App() {
                 onEdit={openEdit}
                 renderUnder={(c) =>
                   c.id === activeId && treeOpen
-                    ? <ObjectTree tables={tables} active={activeTable} onSelect={onSelectTable} />
+                    ? <ObjectTree tables={tables} active={tab?.table ?? null} onSelect={onSelectTable} />
                     : null}
               />
             </div>
@@ -167,13 +198,14 @@ export default function App() {
 
         <HHandle />
 
-        {/* 中栏:连接信息条 + (SQL 上 / 结果下,可拖动) */}
+        {/* 中栏 */}
         <Panel defaultSize={58} minSize={25}>
           <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-            <div style={{ padding: "5px 10px", fontSize: 12, borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", color: activeConn ? "var(--fg)" : "var(--fg-muted)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            {/* 连接信息条 + 右栏开关 */}
+            <div style={{ padding: "5px 10px", fontSize: 12, borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", color: headConn ? "var(--fg)" : "var(--fg-muted)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {activeConn
-                  ? <>🔌 {activeConn.name} · 库 <b>{activeConn.database}</b>{activeTable ? ` · 表 ${activeTable}` : ""}</>
+                {headConn
+                  ? <>🔌 {headConn.name} · 库 <b>{headConn.database}</b>{tab?.table ? ` · 表 ${tab.table}` : ""}</>
                   : "未连接 —— 点左侧连接"}
               </span>
               <button onClick={toggleRight} title={rightOpen ? "隐藏详情栏" : "显示详情栏"}
@@ -181,42 +213,76 @@ export default function App() {
                 {rightOpen ? "»" : "«"}
               </button>
             </div>
-            <div style={{ flex: 1, minHeight: 0 }}>
-              <PanelGroup direction="vertical" autoSaveId="dbstudio-mid">
-                <Panel defaultSize={45} minSize={15}>
-                  <div style={{ height: "100%", overflow: "hidden" }}>
-                    <SqlEditor value={sql} onChange={setSql} onRun={runSql} />
-                  </div>
-                </Panel>
 
-                <VHandle />
-
-                <Panel defaultSize={55} minSize={15}>
-                  <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-                    <div style={{ padding: "4px 10px", fontSize: 11, color: "var(--fg-muted)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-                      {err ? <span style={{ color: "var(--error)" }}>查询出错</span>
-                        : result ? `${result.rows.length} 行 · ${result.columns.length} 列${result.affected != null ? ` · 影响 ${result.affected}` : ""}`
-                        : activeId ? "就绪,运行 SQL 或点左侧表" : "未连接"}
-                    </div>
-                    <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-                      {err && <div style={{ color: "var(--error)", padding: 8, fontSize: 12, whiteSpace: "pre-wrap" }}>{err}</div>}
-                      {!err && result && result.rows.length === 0 &&
-                        <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 12 }}>查询成功,但没有行(0 行)</div>}
-                      {!err && result && result.rows.length > 0 &&
-                        <ResultGrid result={result} pkCol={pkCol} dirtyKeys={dirtyKeys}
-                          onStage={(e) => store.stageEdit({ ...e, table: activeTable ?? "" })} onCommit={commit} />}
-                    </div>
-                    {browseTable && (
-                      <div style={{ flexShrink: 0, borderTop: "1px solid var(--border)", padding: "4px 10px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, fontSize: 12 }}>
-                        <span style={{ color: "var(--fg-muted)" }}>第 {page + 1} 页 · 每页 {PAGE_SIZE}</span>
-                        <button disabled={!canPrev} onClick={() => gotoPage(page - 1)} title="上一页">←</button>
-                        <button disabled={!canNext} onClick={() => gotoPage(page + 1)} title="下一页">→</button>
-                      </div>
-                    )}
-                  </div>
-                </Panel>
-              </PanelGroup>
+            {/* 标签页栏 */}
+            <div style={{ display: "flex", alignItems: "stretch", overflowX: "auto", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+              {tabs.map((t) => (
+                <div key={t.id}
+                     onClick={() => setActiveTabId(t.id)}
+                     title={t.title}
+                     style={{
+                       display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
+                       cursor: "pointer", fontSize: 12, whiteSpace: "nowrap",
+                       borderRight: "1px solid var(--border)",
+                       background: t.id === activeTabId ? "var(--bg)" : "transparent",
+                       borderTop: t.id === activeTabId ? "2px solid var(--accent)" : "2px solid transparent",
+                     }}>
+                  <span style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>
+                  <span onClick={(e) => { e.stopPropagation(); closeTab(t.id); }}
+                        title="关闭" style={{ color: "var(--fg-muted)", padding: "0 2px" }}>✕</span>
+                </div>
+              ))}
             </div>
+
+            {tab ? (
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <PanelGroup direction="vertical" autoSaveId="dbstudio-mid">
+                  <Panel defaultSize={40} minSize={12}>
+                    <SqlEditor value={tab.sql} onChange={(v) => patch(tab.id, { sql: v })} onRun={runSql} />
+                  </Panel>
+
+                  <VHandle />
+
+                  <Panel defaultSize={60} minSize={15}>
+                    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+                      {/* 结果状态条 + 运行按钮(右上) */}
+                      <div style={{ padding: "4px 10px", fontSize: 11, color: "var(--fg-muted)", borderBottom: "1px solid var(--border)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <span>
+                          {tab.err ? <span style={{ color: "var(--error)" }}>查询出错</span>
+                            : tab.result ? `${tab.result.rows.length} 行 · ${tab.result.columns.length} 列${tab.result.affected != null ? ` · 影响 ${tab.result.affected}` : ""}`
+                            : "就绪"}
+                        </span>
+                        <button onClick={runSql} title="运行 (⌘↵)"
+                          style={{ flexShrink: 0, background: "var(--accent)", color: "#fff", border: 0, borderRadius: 4, padding: "2px 12px", fontSize: 11, cursor: "pointer" }}>
+                          ▶ 运行 ⌘↵
+                        </button>
+                      </div>
+                      {/* 结果滚动区 */}
+                      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+                        {tab.err && <div style={{ color: "var(--error)", padding: 8, fontSize: 12, whiteSpace: "pre-wrap" }}>{tab.err}</div>}
+                        {!tab.err && tab.result && tab.result.rows.length === 0 &&
+                          <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 12 }}>查询成功,但没有行(0 行)</div>}
+                        {!tab.err && tab.result && tab.result.rows.length > 0 &&
+                          <ResultGrid result={tab.result} pkCol={pkCol} dirtyKeys={dirtyKeys}
+                            onStage={stageEdit} onCommit={commit} />}
+                      </div>
+                      {/* 分页(右下) */}
+                      {tab.browseTable && (
+                        <div style={{ flexShrink: 0, borderTop: "1px solid var(--border)", padding: "4px 10px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, fontSize: 12 }}>
+                          <span style={{ color: "var(--fg-muted)" }}>第 {tab.page + 1} 页 · 每页 {PAGE_SIZE}</span>
+                          <button disabled={!canPrev} onClick={() => gotoPage(tab.page - 1)} title="上一页">←</button>
+                          <button disabled={!canNext} onClick={() => gotoPage(tab.page + 1)} title="下一页">→</button>
+                        </div>
+                      )}
+                    </div>
+                  </Panel>
+                </PanelGroup>
+              </div>
+            ) : (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-muted)", fontSize: 13 }}>
+                点左侧的表打开一个标签页
+              </div>
+            )}
           </div>
         </Panel>
 
@@ -226,8 +292,8 @@ export default function App() {
         <Panel ref={rightRef} collapsible collapsedSize={0} defaultSize={24} minSize={12}
           onCollapse={() => setRightOpen(false)} onExpand={() => setRightOpen(true)}>
           <aside style={{ height: "100%", overflow: "auto", background: "var(--bg-panel)" }}>
-            {detail && activeTable
-              ? <TableDetail detail={detail} table={activeTable} />
+            {tab?.detail && tab.table
+              ? <TableDetail detail={tab.detail} table={tab.table} />
               : <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 10 }}>详情</div>}
           </aside>
         </Panel>
