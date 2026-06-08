@@ -21,7 +21,7 @@
 |------|------|
 | A | 连接管理:保存/切换多个 PG/Redis 连接 |
 | B | PG:浏览表数据 |
-| C | PG:行内编辑(即时写库) |
+| C | PG:行内编辑(暂存-确认提交,非即时) |
 | D | PG:SQL 编辑器(写、执行、看结果) |
 | E | Redis:浏览 key(SCAN 模式过滤、按 `:` 折叠树、切 DB) |
 | F | Redis:执行命令 |
@@ -54,8 +54,8 @@
 ### 中栏 — 纵向拆分(可拖拽调整比例)
 - **上半**:SQL 编辑器(PG)/ 命令输入(Redis),`⌘↵` 运行
 - **下半**:结果表格
-  - PG:查询结果或表数据,**双击单元格即时改 → 直接写库**
-  - Redis:按 value 类型渲染(STRING→文本框、HASH/LIST/SET/ZSET→表格、JSON→高亮)
+  - PG:查询结果或表数据,**双击单元格修改 → 暂存(脏单元格高亮)→ `⌘S` 或「提交修改」按钮才写库;「放弃修改」可撤销暂存**
+  - Redis:按 value 类型渲染(STRING→文本框、HASH/LIST/SET/ZSET→表格、JSON→高亮);**编辑同样走暂存-确认,`⌘S`/「提交修改」才写入,「放弃修改」撤销**
 - **点左栏对象 = 隐式查询**:点 PG 表自动生成 `SELECT * FROM 表`;点 Redis key 自动填 `HGETALL`/`GET` 等并执行
 
 ### 右栏 — 详情
@@ -96,19 +96,22 @@
 - **统一错误类型**:后端错误转成结构化错误返回前端
 
 ### pg 模块
-- `pg_connect`、`pg_list_objects`(schema/表)、`pg_query(sql)`、`pg_update_cell(table, pk, col, value)`、`pg_table_detail(table)`
-- 行内编辑:根据主键定位行生成 `UPDATE`,立即执行(无暂存)
+- `pg_connect`、`pg_list_objects`(schema/表)、`pg_query(sql)`、`pg_commit_edits(table, edits[])`、`pg_table_detail(table)`
+- 行内编辑(暂存-确认):前端累积一批改动(每条含主键、列、新值),用户 `⌘S`/「提交修改」时一次性调 `pg_commit_edits`;后端按主键为每条改动生成 `UPDATE`,在**单个事务**内执行,全部成功才提交,任一失败则回滚并返回结构化错误
 
 ### redis 模块
-- `redis_connect`、`redis_scan(pattern, db)`、`redis_get_key(key)`、`redis_exec(command)`、`redis_set_value(...)`、`redis_key_detail(key)`、`redis_set_ttl`、`redis_del`
+- `redis_connect`、`redis_scan(pattern, db)`、`redis_get_key(key)`、`redis_exec(command)`、`redis_commit_edits(edits[])`、`redis_key_detail(key)`、`redis_set_ttl`、`redis_del`
+- value 编辑(暂存-确认):前端累积改动,`⌘S`/「提交修改」时调 `redis_commit_edits`,后端用 `MULTI/EXEC` 管线把一批写命令(`HSET`/`SET`/`LSET` 等)原子执行
 
 ## 4. 数据流
 
 **浏览 PG 表**:点左栏表 → 前端调 `pg_query("SELECT * FROM t LIMIT n")` → 结果渲染到中栏下半 → 同时调 `pg_table_detail` 填右栏。
 
-**编辑 PG 单元格**:双击改值 → 前端调 `pg_update_cell` → 后端用主键生成 `UPDATE` 立即执行 → 成功后刷新该行 / 失败弹出结构化错误。
+**编辑 PG 单元格(暂存-确认)**:双击改值 → 前端把改动记入暂存区、单元格高亮为"脏" → 可继续改多个 → `⌘S`/「提交修改」时把所有暂存改动一次性调 `pg_commit_edits` → 后端在单事务内逐条 `UPDATE`,全成功提交、任一失败回滚 → 成功后清空暂存并刷新;「放弃修改」直接清空暂存还原显示。
 
 **Redis 看 key**:点左栏 key → 调 `redis_get_key` → 按类型渲染中栏下半 + 调 `redis_key_detail` 填右栏。
+
+**编辑 Redis value(暂存-确认)**:改值 → 记入暂存区、高亮为"脏" → 可继续改 → `⌘S`/「提交修改」时一次性调 `redis_commit_edits`,后端 `MULTI/EXEC` 原子执行 → 成功清空暂存并刷新;「放弃修改」清空暂存还原。
 
 **连接建立(带 SSH)**:读连接配置 → 如配了 SSH 先建隧道拿到本地端口 → 用本地端口连数据库 → 凭据按 env 从明文/钥匙串取。
 
@@ -127,5 +130,4 @@
 ## 7. 后续可扩展点(非 v1)
 - 主密码加密模式
 - 更多数据库(届时再评估是否引入 trait 抽象)
-- 行内编辑的"暂存-确认"安全模式
 - 导出/导入、DDL 编辑
