@@ -10,7 +10,6 @@ export function ConnectionForm(props: {
   initial?: Connection;
   onSubmit: (conn: Connection, password: string) => void;
   onCancel: () => void;
-  onDelete?: () => void;
 }) {
   const [c, setC] = useState<Connection>(props.initial ?? blank);
   const [pw, setPw] = useState("");
@@ -27,10 +26,6 @@ export function ConnectionForm(props: {
   const ghostBtn: React.CSSProperties = {
     background: "transparent", color: "var(--fg-muted)", border: "1px solid var(--border)",
     borderRadius: 12, padding: "9px 18px", cursor: "pointer",
-  };
-  const dangerBtn: React.CSSProperties = {
-    marginLeft: "auto", background: "transparent", color: "var(--error)",
-    border: "1px solid transparent", borderRadius: 12, padding: "9px 14px", cursor: "pointer",
   };
 
   return (
@@ -88,12 +83,9 @@ export function ConnectionForm(props: {
                value={pw} onChange={(e) => setPw(e.target.value)} />
       </label>
 
-      <div style={{ display: "flex", gap: 8, marginTop: 4, alignItems: "center" }}>
-        <button type="submit" style={primaryBtn}>保存</button>
+      <div style={{ display: "flex", gap: 8, marginTop: 4, justifyContent: "flex-end" }}>
         <button type="button" onClick={props.onCancel} style={ghostBtn}>取消</button>
-        {isEdit && props.onDelete && (
-          <button type="button" onClick={props.onDelete} style={dangerBtn}>删除</button>
-        )}
+        <button type="submit" style={primaryBtn}>保存</button>
       </div>
     </form>
   );

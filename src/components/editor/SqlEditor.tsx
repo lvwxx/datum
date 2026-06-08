@@ -6,6 +6,7 @@ export function SqlEditor(props: {
   value: string;
   onChange: (v: string) => void;
   onRun: () => void;
+  dark?: boolean;
 }) {
   return (
     <div style={{ height: "100%", overflow: "auto" }}
@@ -14,6 +15,7 @@ export function SqlEditor(props: {
         value={props.value}
         height="100%"
         style={{ height: "100%" }}
+        theme={props.dark ? "dark" : "light"}
         extensions={[sql({ dialect: PostgreSQL })]}
         onChange={props.onChange}
       />

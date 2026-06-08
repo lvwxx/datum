@@ -51,6 +51,8 @@ export default function App() {
   const [treeOpen, setTreeOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const rightRef = useRef<ImperativePanelHandle>(null);
+  const [menu, setMenu] = useState<{ c: Connection; x: number; y: number } | null>(null);
+  const [confirmDel, setConfirmDel] = useState<Connection | null>(null);
 
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -161,10 +163,15 @@ export default function App() {
     closeForm(); refresh();
   };
 
-  const onDelete = async () => {
-    if (!editConn) return;
-    await deleteConnection(editConn.id);
-    closeForm(); refresh();
+  const confirmDelete = async () => {
+    if (!confirmDel) return;
+    const delId = confirmDel.id;
+    await deleteConnection(delId);
+    const next = tabs.filter((t) => t.connId !== delId);
+    setTabs(next);
+    if (!next.find((t) => t.id === activeTabId)) setActiveTabId(next[0]?.id ?? null);
+    setConfirmDel(null);
+    refresh();
   };
 
   return (
@@ -184,6 +191,7 @@ export default function App() {
                 expandedId={treeOpen ? activeId : null}
                 onPick={onPickConn}
                 onEdit={openEdit}
+                onContext={(c, x, y) => setMenu({ c, x, y })}
                 renderUnder={(c) =>
                   c.id === activeId && treeOpen
                     ? <ObjectTree tables={tables} active={tab?.table ?? null} onSelect={onSelectTable} />
@@ -238,7 +246,7 @@ export default function App() {
               <div style={{ flex: 1, minHeight: 0 }}>
                 <PanelGroup direction="vertical" autoSaveId="dbstudio-mid">
                   <Panel defaultSize={40} minSize={12}>
-                    <SqlEditor value={tab.sql} onChange={(v) => patch(tab.id, { sql: v })} onRun={runSql} />
+                    <SqlEditor value={tab.sql} onChange={(v) => patch(tab.id, { sql: v })} onRun={runSql} dark={name === "mirage"} />
                   </Panel>
 
                   <VHandle />
@@ -306,8 +314,50 @@ export default function App() {
             initial={editConn ?? undefined}
             onSubmit={onSubmit}
             onCancel={closeForm}
-            onDelete={editConn ? onDelete : undefined}
           />
+        </Modal>
+      )}
+
+      {/* 右键连接的上下文菜单 */}
+      {menu && (
+        <>
+          <div onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}
+               style={{ position: "fixed", inset: 0, zIndex: 200 }} />
+          <div style={{
+            position: "fixed", left: menu.x, top: menu.y, zIndex: 201, minWidth: 120,
+            background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8,
+            boxShadow: "0 6px 20px rgba(0,0,0,0.2)", padding: 4, fontSize: 13,
+          }}>
+            <div onClick={() => { openEdit(menu.c); setMenu(null); }}
+                 style={{ padding: "6px 10px", cursor: "pointer", borderRadius: 5 }}>编辑</div>
+            <div onClick={() => { setConfirmDel(menu.c); setMenu(null); }}
+                 style={{ padding: "6px 10px", cursor: "pointer", borderRadius: 5, color: "var(--error)" }}>删除</div>
+          </div>
+        </>
+      )}
+
+      {/* 删除二次确认 */}
+      {confirmDel && (
+        <Modal onClose={() => setConfirmDel(null)}>
+          <div style={{ padding: 20, display: "grid", gap: 14, minWidth: 320 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--fg)" }}>删除连接</div>
+            <div style={{ fontSize: 13, color: "var(--fg)" }}>
+              确定删除连接「<b>{confirmDel.name}</b>」?
+            </div>
+            <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>
+              此操作不可撤销{confirmDel.env !== "local" ? ",并会清除钥匙串中保存的密码" : ""}。
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setConfirmDel(null)}
+                style={{ background: "transparent", color: "var(--fg-muted)", border: "1px solid var(--border)", borderRadius: 12, padding: "9px 18px", cursor: "pointer" }}>
+                取消
+              </button>
+              <button onClick={confirmDelete}
+                style={{ background: "var(--error)", color: "#fff", border: 0, borderRadius: 12, padding: "9px 18px", cursor: "pointer", fontWeight: 600 }}>
+                删除
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
     </div>

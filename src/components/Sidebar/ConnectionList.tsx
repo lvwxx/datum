@@ -15,6 +15,8 @@ export function ConnectionList(props: {
   expandedId?: string | null;
   /** 在某个连接行下方渲染内容(如展开的表树) */
   renderUnder?: (c: Connection) => ReactNode;
+  /** 右键连接行(用于上下文菜单) */
+  onContext?: (c: Connection, x: number, y: number) => void;
 }) {
   return (
     <div>
@@ -22,6 +24,7 @@ export function ConnectionList(props: {
         <div key={c.id}>
           <div
             onClick={() => props.onPick(c.id)}
+            onContextMenu={(e) => { e.preventDefault(); props.onContext?.(c, e.clientX, e.clientY); }}
             style={{
               padding: "6px 8px", cursor: "pointer", display: "flex",
               alignItems: "center", gap: 6, overflow: "hidden",
