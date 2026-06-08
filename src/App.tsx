@@ -401,38 +401,47 @@ export default function App() {
         ]} />
       )}
 
-      {/* 建表语句浮层:带小箭头指向左侧表名 */}
-      {ddl && (
-        <>
-          <div onClick={() => setDdl(null)} style={{ position: "fixed", inset: 0, zIndex: 150 }} />
-          <div style={{
-            position: "fixed", left: ddl.x + 8, top: Math.max(8, ddl.y - 18),
-            width: 560, maxWidth: "70vw", zIndex: 151,
-            background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column",
-          }}>
-            {/* 箭头(描边 + 填充两层三角) */}
-            <div style={{ position: "absolute", left: -8, top: 16, width: 0, height: 0,
-              borderTop: "8px solid transparent", borderBottom: "8px solid transparent",
-              borderRight: "8px solid var(--border)" }} />
-            <div style={{ position: "absolute", left: -7, top: 16, width: 0, height: 0,
-              borderTop: "8px solid transparent", borderBottom: "8px solid transparent",
-              borderRight: "8px solid var(--bg)" }} />
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", borderBottom: "1px solid var(--border)" }}>
-              <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>建表语句 · <b style={{ color: "var(--fg)" }}>{ddl.table}</b></span>
-              <span style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => copyWithToast(ddl.sql)} title="复制全部"
-                  style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 8, padding: "4px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>复制</button>
-                <button onClick={() => setDdl(null)} title="关闭"
-                  style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "var(--fg-muted)" }}>关闭</button>
-              </span>
+      {/* 建表语句浮层:位置自适应,小箭头指向左侧表名 */}
+      {ddl && (() => {
+        const M = 12;
+        const W = Math.min(560, window.innerWidth * 0.7);
+        const H = Math.min(window.innerHeight * 0.55, window.innerHeight - 2 * M);
+        let left = ddl.x + 8;
+        left = Math.max(M, Math.min(left, window.innerWidth - W - M));
+        let top = ddl.y - 20;
+        top = Math.max(M, Math.min(top, window.innerHeight - H - M));
+        const arrowTop = Math.max(10, Math.min(ddl.y - top - 8, H - 24)); // 箭头跟随锚点
+        return (
+          <>
+            <div onClick={() => setDdl(null)} style={{ position: "fixed", inset: 0, zIndex: 150 }} />
+            <div style={{
+              position: "fixed", left, top, width: W, height: H, zIndex: 151,
+              background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10,
+              boxShadow: "0 8px 32px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column",
+            }}>
+              {/* 箭头(描边 + 填充两层三角) */}
+              <div style={{ position: "absolute", left: -8, top: arrowTop, width: 0, height: 0,
+                borderTop: "8px solid transparent", borderBottom: "8px solid transparent",
+                borderRight: "8px solid var(--border)" }} />
+              <div style={{ position: "absolute", left: -7, top: arrowTop, width: 0, height: 0,
+                borderTop: "8px solid transparent", borderBottom: "8px solid transparent",
+                borderRight: "8px solid var(--bg)" }} />
+              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", borderBottom: "1px solid var(--border)" }}>
+                <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>建表语句 · <b style={{ color: "var(--fg)" }}>{ddl.table}</b></span>
+                <span style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => copyWithToast(ddl.sql)} title="复制全部"
+                    style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 8, padding: "4px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>复制</button>
+                  <button onClick={() => setDdl(null)} title="关闭"
+                    style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "var(--fg-muted)" }}>关闭</button>
+                </span>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+                <SqlView value={ddl.sql} dark={name === "mirage"} />
+              </div>
             </div>
-            <div style={{ height: "46vh", overflow: "auto" }}>
-              <SqlView value={ddl.sql} dark={name === "mirage"} />
-            </div>
-          </div>
-        </>
-      )}
+          </>
+        );
+      })()}
 
       {/* 删除二次确认 */}
       {confirmDel && (
