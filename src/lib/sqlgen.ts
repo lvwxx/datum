@@ -33,3 +33,10 @@ export function buildInsert(table: string, detail: TableDetail): string {
   const vals = detail.columns.map((c) => `<${c.name}>`).join(", ");
   return `INSERT INTO ${q(table)} (${cols})\nVALUES (${vals});`;
 }
+
+/** 由结果某一行的真实值合成 INSERT(NULL 原样,其余单引号转义)。 */
+export function buildInsertRow(table: string, columns: string[], values: (string | null)[]): string {
+  const cols = columns.map(q).join(", ");
+  const vals = values.map((v) => (v == null ? "NULL" : `'${v.replace(/'/g, "''")}'`)).join(", ");
+  return `INSERT INTO ${q(table)} (${cols}) VALUES (${vals});`;
+}

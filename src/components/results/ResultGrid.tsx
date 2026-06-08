@@ -10,6 +10,7 @@ export function ResultGrid(props: {
   dirtyKeys: Set<string>;
   onStage: (e: Omit<CellEdit, "table">) => void;
   onCommit: () => void;
+  onRowContext?: (rowIndex: number, x: number, y: number) => void;
 }) {
   const { columns, rows } = props.result;
   const pkIndex = props.pkCol ? columns.indexOf(props.pkCol) : -1;
@@ -49,7 +50,8 @@ export function ResultGrid(props: {
           {rows.map((row, ri) => {
             const selected = selectedRow === ri;
             return (
-              <tr key={ri} onClick={() => setSelectedRow(ri)}>
+              <tr key={ri} onClick={() => setSelectedRow(ri)}
+                  onContextMenu={(e) => { e.preventDefault(); setSelectedRow(ri); props.onRowContext?.(ri, e.clientX, e.clientY); }}>
                 {row.map((cellVal, ci) => {
                   const pkValue = pkIndex >= 0 ? row[pkIndex] ?? "" : "";
                   const dirty = props.dirtyKeys.has(`${pkValue}|${columns[ci]}`);
