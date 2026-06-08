@@ -1,5 +1,5 @@
 import { test, expect } from "vitest";
-import { buildCreateTable, buildInsert } from "./sqlgen";
+import { buildCreateTable, buildInsert, buildInsertRow } from "./sqlgen";
 
 const detail = {
   columns: [
@@ -26,4 +26,11 @@ test("buildInsert lists all columns with placeholders", () => {
   const ins = buildInsert("users", detail);
   expect(ins).toContain('INSERT INTO "users" ("id", "email", "note")');
   expect(ins).toContain("VALUES (<id>, <email>, <note>)");
+});
+
+test("buildInsertRow uses real values, NULL and quote-escaping", () => {
+  const ins = buildInsertRow("users", ["id", "name"], ["1", "O'Brien"]);
+  expect(ins).toBe(`INSERT INTO "users" ("id", "name") VALUES ('1', 'O''Brien');`);
+  const withNull = buildInsertRow("users", ["id", "name"], ["2", null]);
+  expect(withNull).toContain("VALUES ('2', NULL)");
 });

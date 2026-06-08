@@ -9,7 +9,8 @@ import { pgConnect, pgListObjects, pgQuery, pgTableDetail, pgCommitEdits } from 
 import type { QueryResult, TableDetail as Detail, CellEdit } from "./api/pg";
 import { Modal } from "./components/Modal";
 import { ContextMenu } from "./components/ContextMenu";
-import { buildCreateTable, buildInsert } from "./lib/sqlgen";
+import { SqlView } from "./components/SqlView";
+import { buildCreateTable, buildInsert, buildInsertRow } from "./lib/sqlgen";
 import { copyToClipboard } from "./lib/clipboard";
 import { ConnectionList } from "./components/Sidebar/ConnectionList";
 import { ConnectionForm } from "./components/Sidebar/ConnectionForm";
@@ -59,6 +60,7 @@ export default function App() {
   const [confirmDel, setConfirmDel] = useState<Connection | null>(null);
   const [tableMenu, setTableMenu] = useState<{ table: string; x: number; y: number } | null>(null);
   const [colMenu, setColMenu] = useState<{ x: number; y: number } | null>(null);
+  const [rowMenu, setRowMenu] = useState<{ rowIndex: number; x: number; y: number } | null>(null);
   const [ddl, setDdl] = useState<{ table: string; sql: string } | null>(null);
 
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -210,6 +212,14 @@ export default function App() {
     if (tab?.detail && tab.table) copyToClipboard(buildInsert(tab.table, tab.detail));
   };
 
+  // 复制结果某一行的 INSERT(真实值)
+  const copyInsertRow = (rowIndex: number) => {
+    if (!tab?.result) return;
+    const row = tab.result.rows[rowIndex];
+    if (!row) return;
+    copyToClipboard(buildInsertRow(tab.table ?? "table", tab.result.columns, row));
+  };
+
   return (
     <div style={{ height: "100vh" }}>
       <PanelGroup direction="horizontal" autoSaveId="dbstudio-cols">
@@ -312,7 +322,8 @@ export default function App() {
                           <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 12 }}>查询成功,但没有行(0 行)</div>}
                         {!tab.err && tab.result && tab.result.rows.length > 0 &&
                           <ResultGrid result={tab.result} pkCol={pkCol} dirtyKeys={dirtyKeys}
-                            onStage={stageEdit} onCommit={commit} />}
+                            onStage={stageEdit} onCommit={commit}
+                            onRowContext={(rowIndex, x, y) => setRowMenu({ rowIndex, x, y })} />}
                       </div>
                       {/* 分页(右下) */}
                       {tab.browseTable && (
@@ -339,31 +350,11 @@ export default function App() {
         {/* 右栏:表详情(可折叠) */}
         <Panel ref={rightRef} collapsible collapsedSize={0} defaultSize={24} minSize={12}
           onCollapse={() => setRightOpen(false)} onExpand={() => setRightOpen(true)}>
-          <aside style={{ height: "100%", overflow: "hidden", background: "var(--bg-panel)", display: "flex", flexDirection: "column" }}>
-            {ddl ? (
-              <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-                  <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>建表语句 · <b style={{ color: "var(--fg)" }}>{ddl.table}</b></span>
-                  <span style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => copyToClipboard(ddl.sql)} title="复制全部"
-                      style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 8, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>复制</button>
-                    <button onClick={() => setDdl(null)} title="关闭"
-                      style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--fg-muted)" }}>关闭</button>
-                  </span>
-                </div>
-                <textarea readOnly value={ddl.sql} spellCheck={false}
-                  style={{ flex: 1, minHeight: 0, border: 0, borderRadius: 0, resize: "none",
-                           fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12,
-                           padding: 10, background: "var(--bg)", color: "var(--fg)" }} />
-              </div>
-            ) : tab?.detail && tab.table ? (
-              <div style={{ overflow: "auto", height: "100%" }}>
-                <TableDetail detail={tab.detail} table={tab.table}
+          <aside style={{ height: "100%", overflow: "auto", background: "var(--bg-panel)" }}>
+            {tab?.detail && tab.table
+              ? <TableDetail detail={tab.detail} table={tab.table}
                   onColContext={(x, y) => setColMenu({ x, y })} />
-              </div>
-            ) : (
-              <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 10 }}>详情</div>
-            )}
+              : <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 10 }}>详情</div>}
           </aside>
         </Panel>
       </PanelGroup>
@@ -399,6 +390,33 @@ export default function App() {
         <ContextMenu x={colMenu.x} y={colMenu.y} onClose={() => setColMenu(null)} items={[
           { label: "复制 INSERT 语句", onClick: copyInsert },
         ]} />
+      )}
+
+      {/* 右键结果行 */}
+      {rowMenu && (
+        <ContextMenu x={rowMenu.x} y={rowMenu.y} onClose={() => setRowMenu(null)} items={[
+          { label: "复制 INSERT 语句", onClick: () => copyInsertRow(rowMenu.rowIndex) },
+        ]} />
+      )}
+
+      {/* 建表语句浮层 */}
+      {ddl && (
+        <Modal onClose={() => setDdl(null)} maxWidth={680}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
+              <span style={{ fontSize: 13 }}>建表语句 · <b>{ddl.table}</b></span>
+              <span style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => copyToClipboard(ddl.sql)} title="复制全部"
+                  style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 8, padding: "5px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>复制</button>
+                <button onClick={() => setDdl(null)} title="关闭"
+                  style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "var(--fg-muted)" }}>关闭</button>
+              </span>
+            </div>
+            <div style={{ height: "50vh", overflow: "auto" }}>
+              <SqlView value={ddl.sql} dark={name === "mirage"} />
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* 删除二次确认 */}

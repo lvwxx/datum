@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 
 /** 居中弹窗:点击遮罩关闭,内容区不冒泡。 */
-export function Modal(props: { onClose: () => void; children: ReactNode }) {
+export function Modal(props: { onClose: () => void; children: ReactNode; maxWidth?: number }) {
   return (
     <div
       onClick={props.onClose}
@@ -16,7 +16,7 @@ export function Modal(props: { onClose: () => void; children: ReactNode }) {
         style={{
           background: "var(--bg)", color: "var(--fg)",
           border: "1px solid var(--border)", borderRadius: 10,
-          minWidth: 380, maxWidth: 480, width: "90%",
+          minWidth: 380, maxWidth: props.maxWidth ?? 480, width: "90%",
           boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
         }}
       >
