@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import type { ImperativePanelHandle } from "react-resizable-panels";
 import { useTheme } from "./theme/ThemeProvider";
@@ -153,6 +154,19 @@ export default function App() {
     }
   };
 
+  // ⌘W:有打开的 tab 则关闭当前 tab;否则退出程序
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        if (activeTabId) closeTab(activeTabId);
+        else getCurrentWindow().close();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeTabId, tabs]);
+
   const openNew = () => { setEditConn(null); setFormOpen(true); };
   const openEdit = (c: Connection) => { setEditConn(c); setFormOpen(true); };
   const closeForm = () => { setFormOpen(false); setEditConn(null); };
@@ -199,7 +213,10 @@ export default function App() {
               />
             </div>
             <div style={{ padding: 8, flexShrink: 0, borderTop: "1px solid var(--border)" }}>
-              <button onClick={toggle}>主题:{name}</button>
+              <button onClick={toggle} title="切换主题"
+                style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 10, cursor: "pointer", padding: "4px 10px", fontSize: 15 }}>
+                {name === "light" ? "☀️" : "🌙"}
+              </button>
             </div>
           </aside>
         </Panel>
