@@ -1,6 +1,7 @@
 mod error;
 mod core;
 mod commands;
+mod pg;
 
 use commands::AppState;
 use std::sync::Mutex;
