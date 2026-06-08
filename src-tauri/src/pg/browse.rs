@@ -47,15 +47,16 @@ fn escape_literal(s: &str) -> String { s.replace('\'', "''") }
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn conninfo() -> String {
+    fn test_config() -> tokio_postgres::Config {
         std::env::var("DBSTUDIO_TEST_PG")
             .unwrap_or_else(|_| "host=127.0.0.1 port=5432 user=postgres password=postgres dbname=postgres".into())
+            .parse().unwrap()
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore]
     async fn lists_users_table_and_detail() {
         let pool = PgPool::default();
-        pool.connect("t", &conninfo()).await.unwrap();
+        pool.connect("t", &test_config()).await.unwrap();
         let tables = list_tables(&pool, "t").await.unwrap();
         assert!(tables.contains(&"users".to_string()));
         let detail = table_detail(&pool, "t", "users").await.unwrap();

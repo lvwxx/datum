@@ -21,16 +21,17 @@ pub async fn commit_edits(pool: &PgPool, id: &str, edits: &[CellEdit]) -> AppRes
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn conninfo() -> String {
+    fn test_config() -> tokio_postgres::Config {
         std::env::var("DBSTUDIO_TEST_PG")
             .unwrap_or_else(|_| "host=127.0.0.1 port=5432 user=postgres password=postgres dbname=postgres".into())
+            .parse().unwrap()
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore]
     async fn commits_a_cell_edit() {
         let pool = PgPool::default();
-        pool.connect("t", &conninfo()).await.unwrap();
+        pool.connect("t", &test_config()).await.unwrap();
         let edits = vec![CellEdit {
             table: "users".into(), pk_col: "id".into(), pk_value: "2".into(),
             column: "name".into(), new_value: "Bobby".into(),
@@ -45,7 +46,7 @@ mod tests {
     #[ignore]
     async fn bad_edit_rolls_back() {
         let pool = PgPool::default();
-        pool.connect("t", &conninfo()).await.unwrap();
+        pool.connect("t", &test_config()).await.unwrap();
         // 先确保 id=1 的 email 是已知值
         pool.query("t", "UPDATE users SET email='a@x.com' WHERE id=1").await.unwrap();
         // id 是 int8,写入非数字会失败 → 整批回滚
@@ -64,7 +65,7 @@ mod tests {
     #[ignore]
     async fn edits_a_numeric_column() {
         let pool = PgPool::default();
-        pool.connect("t", &conninfo()).await.unwrap();
+        pool.connect("t", &test_config()).await.unwrap();
         pool.query("t", "DROP TABLE IF EXISTS dbstudio_numtest").await.unwrap();
         pool.query("t", "CREATE TABLE dbstudio_numtest(id int8 PRIMARY KEY, qty int4)").await.unwrap();
         pool.query("t", "INSERT INTO dbstudio_numtest VALUES (1, 10)").await.unwrap();
