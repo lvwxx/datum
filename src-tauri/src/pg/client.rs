@@ -26,6 +26,7 @@ impl PgPool {
         Ok(())
     }
 
+    #[allow(dead_code)] // 目前仅测试使用,保留备将来重连/状态显示
     pub async fn is_connected(&self, id: &str) -> bool {
         self.clients.lock().await.contains_key(id)
     }
