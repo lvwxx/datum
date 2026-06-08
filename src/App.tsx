@@ -12,7 +12,9 @@ import { ContextMenu } from "./components/ContextMenu";
 import { SqlView } from "./components/SqlView";
 import { Toaster, toast } from "./components/Toast";
 import { buildCreateTable, buildInsert, buildInsertRow } from "./lib/sqlgen";
+import { currentStatement } from "./lib/sqlstmt";
 import { copyToClipboard } from "./lib/clipboard";
+import type { EditorView } from "@codemirror/view";
 import { ConnectionList } from "./components/Sidebar/ConnectionList";
 import { ConnectionForm } from "./components/Sidebar/ConnectionForm";
 import { ObjectTree } from "./components/Sidebar/ObjectTree";
@@ -57,6 +59,16 @@ export default function App() {
   const [treeOpen, setTreeOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const rightRef = useRef<ImperativePanelHandle>(null);
+  const viewRef = useRef<EditorView | null>(null);
+
+  // 运行时取:有选区跑选区,否则跑光标所在的那条语句
+  const sqlToRun = (): string => {
+    const v = viewRef.current;
+    if (!v) return tab?.sql ?? "";
+    const sel = v.state.selection.main;
+    if (!sel.empty) return v.state.sliceDoc(sel.from, sel.to).trim();
+    return currentStatement(v.state.doc.toString(), sel.head);
+  };
   const [menu, setMenu] = useState<{ c: Connection; x: number; y: number } | null>(null);
   const [confirmDel, setConfirmDel] = useState<Connection | null>(null);
   const [tableMenu, setTableMenu] = useState<{ table: string; x: number; y: number } | null>(null);
@@ -131,9 +143,10 @@ export default function App() {
 
   const runSql = async () => {
     if (!tab) return;
-    if (!tab.sql.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
+    const q = sqlToRun();
+    if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
-      const result = await pgQuery(tab.connId, tab.sql);
+      const result = await pgQuery(tab.connId, q);
       patch(tab.id, { result, err: null, browseTable: null, page: 0 });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
@@ -298,7 +311,7 @@ export default function App() {
               <div style={{ flex: 1, minHeight: 0 }}>
                 <PanelGroup direction="vertical" autoSaveId="dbstudio-mid">
                   <Panel defaultSize={40} minSize={12}>
-                    <SqlEditor value={tab.sql} onChange={(v) => patch(tab.id, { sql: v })} onRun={runSql} dark={name === "mirage"} />
+                    <SqlEditor value={tab.sql} onChange={(v) => patch(tab.id, { sql: v })} onRun={runSql} dark={name === "mirage"} onView={(v) => { viewRef.current = v; }} />
                   </Panel>
 
                   <VHandle />

@@ -1,5 +1,6 @@
 import CodeMirror from "@uiw/react-codemirror";
 import { sql, PostgreSQL } from "@codemirror/lang-sql";
+import type { EditorView } from "@codemirror/view";
 import { upperKeywords } from "./upperKeywords";
 
 /** SQL 编辑器,填满容器高度。运行按钮在结果栏,这里只保留 ⌘↵ 快捷键。 */
@@ -8,6 +9,7 @@ export function SqlEditor(props: {
   onChange: (v: string) => void;
   onRun: () => void;
   dark?: boolean;
+  onView?: (view: EditorView) => void;
 }) {
   return (
     <div style={{ height: "100%", overflow: "auto" }}
@@ -19,6 +21,7 @@ export function SqlEditor(props: {
         theme={props.dark ? "dark" : "light"}
         extensions={[sql({ dialect: PostgreSQL }), upperKeywords]}
         onChange={props.onChange}
+        onCreateEditor={(view) => props.onView?.(view)}
       />
     </div>
   );
