@@ -7,6 +7,8 @@ import { useStore } from "./state/store";
 import { listConnections, saveConnection, deleteConnection } from "./api/connections";
 import { pgConnect, pgListObjects, pgQuery, pgTableDetail, pgCommitEdits } from "./api/pg";
 import type { QueryResult, TableDetail as Detail, CellEdit } from "./api/pg";
+import { redisConnect, redisScan, redisGetKey, redisKeyDetail, redisExec } from "./api/redis";
+import type { RedisKeyDetail } from "./api/redis";
 import { Modal } from "./components/Modal";
 import { ContextMenu } from "./components/ContextMenu";
 import { SqlView } from "./components/SqlView";
@@ -21,7 +23,7 @@ import { ObjectTree } from "./components/Sidebar/ObjectTree";
 import { SqlEditor } from "./components/editor/SqlEditor";
 import { ResultGrid } from "./components/results/ResultGrid";
 import { TableDetail } from "./components/detail/TableDetail";
-import type { Connection } from "./types";
+import type { Connection, DbKind } from "./types";
 
 const PAGE_SIZE = 100;
 
@@ -29,13 +31,15 @@ const PAGE_SIZE = 100;
 interface Tab {
   id: string;
   connId: string;
+  kind: DbKind;               // pg | redis
   title: string;
-  table: string | null;       // 编辑目标表(点表打开时)
-  sql: string;
-  result: QueryResult | null;
-  detail: Detail | null;
+  table: string | null;       // PG:编辑目标表 / Redis:key 名
+  sql: string;                // PG:SQL / Redis:命令
+  result: QueryResult | null; // 统一的列+行结果(Redis 的值也映射成此)
+  detail: Detail | null;      // PG 表详情
+  redisDetail: RedisKeyDetail | null; // Redis key 详情
   page: number;
-  browseTable: string | null; // 非空表示处于分页浏览
+  browseTable: string | null; // 非空表示处于分页浏览(仅 PG)
   dirty: Record<string, CellEdit>;
   err: string | null;
 }
@@ -69,6 +73,12 @@ export default function App() {
     if (!sel.empty) return v.state.sliceDoc(sel.from, sel.to).trim();
     return currentStatement(v.state.doc.toString(), sel.head);
   };
+  const selectionText = (): string => {
+    const v = viewRef.current;
+    if (!v) return "";
+    const sel = v.state.selection.main;
+    return sel.empty ? "" : v.state.sliceDoc(sel.from, sel.to);
+  };
   const [menu, setMenu] = useState<{ c: Connection; x: number; y: number } | null>(null);
   const [confirmDel, setConfirmDel] = useState<Connection | null>(null);
   const [tableMenu, setTableMenu] = useState<{ table: string; x: number; y: number } | null>(null);
@@ -97,8 +107,11 @@ export default function App() {
 
   const onActivate = async (id: string) => {
     store.activate(id);
-    try { await pgConnect(id); setTables(await pgListObjects(id)); }
-    catch { setTables([]); }
+    const conn = connections.find((c) => c.id === id);
+    try {
+      if (conn?.kind === "redis") { await redisConnect(id); setTables(await redisScan(id, "*")); }
+      else { await pgConnect(id); setTables(await pgListObjects(id)); }
+    } catch { setTables([]); }
   };
 
   const onPickConn = async (id: string) => {
@@ -114,22 +127,38 @@ export default function App() {
   };
 
   // 点表:每次都新开一个 tab
+  // 点表/key:每次都新开一个 tab(按连接类型分别处理)
   const onSelectTable = async (t: string) => {
     if (!activeId) return;
     setDdl(null);
+    const kind: DbKind = connections.find((c) => c.id === activeId)?.kind ?? "pg";
     const id = crypto.randomUUID();
-    const sql = pageSql(t, 0);
-    const fresh: Tab = {
-      id, connId: activeId, title: t, table: t, sql,
-      result: null, detail: null, page: 0, browseTable: t, dirty: {}, err: null,
-    };
-    setTabs((ts) => [...ts, fresh]);
-    setActiveTabId(id);
-    try {
-      const result = await pgQuery(activeId, sql);
-      const detail = await pgTableDetail(activeId, t);
-      patch(id, { result, detail });
-    } catch (e) { patch(id, { err: JSON.stringify(e) }); }
+    if (kind === "redis") {
+      const fresh: Tab = {
+        id, connId: activeId, kind, title: t, table: t, sql: "",
+        result: null, detail: null, redisDetail: null, page: 0, browseTable: null, dirty: {}, err: null,
+      };
+      setTabs((ts) => [...ts, fresh]);
+      setActiveTabId(id);
+      try {
+        const kv = await redisGetKey(activeId, t);
+        const redisDetail = await redisKeyDetail(activeId, t);
+        patch(id, { result: { columns: kv.columns, rows: kv.rows, affected: null }, redisDetail });
+      } catch (e) { patch(id, { err: JSON.stringify(e) }); }
+    } else {
+      const sql = pageSql(t, 0);
+      const fresh: Tab = {
+        id, connId: activeId, kind, title: t, table: t, sql,
+        result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null,
+      };
+      setTabs((ts) => [...ts, fresh]);
+      setActiveTabId(id);
+      try {
+        const result = await pgQuery(activeId, sql);
+        const detail = await pgTableDetail(activeId, t);
+        patch(id, { result, detail });
+      } catch (e) { patch(id, { err: JSON.stringify(e) }); }
+    }
   };
 
   const gotoPage = async (p: number) => {
@@ -143,6 +172,15 @@ export default function App() {
 
   const runSql = async () => {
     if (!tab) return;
+    if (tab.kind === "redis") {
+      const cmd = (selectionText() || tab.sql).trim();
+      if (!cmd) { patch(tab.id, { err: "命令为空" }); return; }
+      try {
+        const reply = await redisExec(tab.connId, cmd);
+        patch(tab.id, { result: { columns: ["结果"], rows: reply ? reply.split("\n").map((l) => [l]) : [], affected: null }, err: null });
+      } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
+      return;
+    }
     const q = sqlToRun();
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
@@ -278,7 +316,7 @@ export default function App() {
             <div style={{ padding: "5px 10px", fontSize: 12, borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", color: headConn ? "var(--fg)" : "var(--fg-muted)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {headConn
-                  ? <>🔌 {headConn.name} · 库 <b>{headConn.database}</b>{tab?.table ? ` · 表 ${tab.table}` : ""}</>
+                  ? <>🔌 {headConn.name} · 库 <b>{headConn.database}</b>{tab?.table ? ` · ${tab.kind === "redis" ? "key" : "表"} ${tab.table}` : ""}</>
                   : "未连接 —— 点左侧连接"}
               </span>
               <button onClick={toggleRight} title={rightOpen ? "隐藏详情栏" : "显示详情栏"}
@@ -366,10 +404,20 @@ export default function App() {
         <Panel ref={rightRef} collapsible collapsedSize={0} defaultSize={24} minSize={12}
           onCollapse={() => setRightOpen(false)} onExpand={() => setRightOpen(true)}>
           <aside style={{ height: "100%", overflow: "auto", background: "var(--bg-panel)" }}>
-            {tab?.detail && tab.table
-              ? <TableDetail detail={tab.detail} table={tab.table}
-                  onColContext={(x, y) => setColMenu({ x, y })} />
-              : <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 10 }}>详情</div>}
+            {tab?.kind === "redis" && tab.redisDetail ? (
+              <div style={{ padding: 10, fontSize: 12, lineHeight: 2 }}>
+                <div style={{ color: "var(--fg-muted)", fontSize: 10, textTransform: "uppercase", marginBottom: 6 }}>KEY 详情</div>
+                <div style={{ wordBreak: "break-all" }}><span style={{ color: "var(--fg-muted)" }}>键</span> <b>{tab.redisDetail.key}</b></div>
+                <div><span style={{ color: "var(--fg-muted)" }}>类型</span> <span style={{ color: "var(--syn-type)" }}>{tab.redisDetail.keyType}</span></div>
+                <div><span style={{ color: "var(--fg-muted)" }}>TTL</span> {tab.redisDetail.ttl === -1 ? "永不过期" : tab.redisDetail.ttl === -2 ? "不存在" : `${tab.redisDetail.ttl}s`}</div>
+                <div><span style={{ color: "var(--fg-muted)" }}>大小</span> {tab.redisDetail.size}</div>
+              </div>
+            ) : tab?.detail && tab.table ? (
+              <TableDetail detail={tab.detail} table={tab.table}
+                onColContext={(x, y) => setColMenu({ x, y })} />
+            ) : (
+              <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 10 }}>详情</div>
+            )}
           </aside>
         </Panel>
       </PanelGroup>
@@ -393,11 +441,14 @@ export default function App() {
         ]} />
       )}
 
-      {/* 右键表 */}
+      {/* 右键表 / key */}
       {tableMenu && (
-        <ContextMenu x={tableMenu.x} y={tableMenu.y} onClose={() => setTableMenu(null)} items={[
-          { label: "查看建表语句", onClick: () => showDdl(tableMenu.table, tableMenu.x, tableMenu.y) },
-        ]} />
+        <ContextMenu x={tableMenu.x} y={tableMenu.y} onClose={() => setTableMenu(null)}
+          items={
+            connections.find((c) => c.id === activeId)?.kind === "redis"
+              ? [{ label: "复制 key 名", onClick: () => copyWithToast(tableMenu.table) }]
+              : [{ label: "查看建表语句", onClick: () => showDdl(tableMenu.table, tableMenu.x, tableMenu.y) }]
+          } />
       )}
 
       {/* 右键结构字段 */}

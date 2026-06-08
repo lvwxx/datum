@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Connection, Env } from "../../types";
+import type { Connection, DbKind, Env } from "../../types";
 
 const blank: Connection = {
   id: "", name: "", kind: "pg", env: "local", host: "127.0.0.1",
@@ -15,6 +15,13 @@ export function ConnectionForm(props: {
   const [pw, setPw] = useState("");
   const upd = (k: keyof Connection, v: string | number) => setC({ ...c, [k]: v });
   const isEdit = !!props.initial;
+
+  const onKind = (kind: DbKind) =>
+    setC({
+      ...c, kind,
+      port: kind === "redis" ? 6379 : 5432,
+      database: kind === "redis" ? "0" : "postgres",
+    });
 
   const field = { display: "grid", gap: 5 } as const;
   const caption = { fontSize: 12, color: "var(--fg)", fontWeight: 600 } as const; // 配置名:最深
@@ -36,6 +43,14 @@ export function ConnectionForm(props: {
       }}
       style={{ display: "grid", gap: 14, padding: 20 }}>
       <div style={{ fontSize: 15, fontWeight: 700, color: "var(--fg)" }}>{isEdit ? "编辑连接" : "新建连接"}</div>
+
+      <label style={field}>
+        <span style={caption}>类型</span>
+        <select value={c.kind} onChange={(e) => onKind(e.target.value as DbKind)}>
+          <option value="pg">PostgreSQL</option>
+          <option value="redis">Redis</option>
+        </select>
+      </label>
 
       <label style={field}>
         <span style={caption}>名称</span>
