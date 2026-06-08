@@ -59,4 +59,23 @@ mod tests {
         let r = pool.query("t", "SELECT email FROM users WHERE id=1").await.unwrap();
         assert_eq!(r.rows[0][0].as_deref(), Some("a@x.com")); // 第一条也被回滚
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore]
+    async fn edits_a_numeric_column() {
+        let pool = PgPool::default();
+        pool.connect("t", &conninfo()).await.unwrap();
+        pool.query("t", "DROP TABLE IF EXISTS dbstudio_numtest").await.unwrap();
+        pool.query("t", "CREATE TABLE dbstudio_numtest(id int8 PRIMARY KEY, qty int4)").await.unwrap();
+        pool.query("t", "INSERT INTO dbstudio_numtest VALUES (1, 10)").await.unwrap();
+        let edits = vec![CellEdit {
+            table: "dbstudio_numtest".into(), pk_col: "id".into(), pk_value: "1".into(),
+            column: "qty".into(), new_value: "42".into(),
+        }];
+        let n = commit_edits(&pool, "t", &edits).await.unwrap();
+        assert_eq!(n, 1);
+        let r = pool.query("t", "SELECT qty FROM dbstudio_numtest WHERE id=1").await.unwrap();
+        assert_eq!(r.rows[0][0].as_deref(), Some("42"));
+        pool.query("t", "DROP TABLE dbstudio_numtest").await.unwrap();
+    }
 }

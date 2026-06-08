@@ -37,14 +37,17 @@ impl PgPool {
             .map_err(|e| AppError::new(ErrorKind::Edit, "开启事务失败").with_detail(e.to_string()))?;
         let mut n = 0u64;
         for e in edits {
-            // pk_value 内联为字面量(避免类型推断问题),new_value 用 $1 参数传递
+            // 将 new_value 和 pk_value 都内联为单引号转义的字符串字面量（无绑定参数）。
+            // PostgreSQL 会将字符串字面量隐式强制转换为目标列的标量类型（如 int4、bool、timestamp 等），
+            // 因此这可以正确处理任意标量列。单引号转义防止 SQL 注入，标识符使用双引号转义。
             let sql = format!(
-                "UPDATE \"{}\" SET \"{}\" = $1 WHERE \"{}\" = '{}'",
+                "UPDATE \"{}\" SET \"{}\" = '{}' WHERE \"{}\" = '{}'",
                 e.table.replace('"', "\"\""),
                 e.column.replace('"', "\"\""),
+                e.new_value.replace('\'', "''"),
                 e.pk_col.replace('"', "\"\""),
                 e.pk_value.replace('\'', "''"));
-            let affected = txn.execute(&sql, &[&e.new_value]).await
+            let affected = txn.execute(&sql, &[]).await
                 .map_err(|err| AppError::new(ErrorKind::Edit, "更新失败").with_detail(err.to_string()))?;
             n += affected;
         }
