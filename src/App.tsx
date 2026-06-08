@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
+import type { ImperativePanelHandle } from "react-resizable-panels";
 import { useTheme } from "./theme/ThemeProvider";
 import { useStore } from "./state/store";
 import { listConnections, saveConnection, deleteConnection } from "./api/connections";
@@ -38,6 +39,9 @@ export default function App() {
   const [err, setErr] = useState<string | null>(null);
   const [browseTable, setBrowseTable] = useState<string | null>(null); // 正在分页浏览的表;手动 SQL 时为 null
   const [page, setPage] = useState(0);
+  const [treeOpen, setTreeOpen] = useState(true); // 当前连接的表树是否展开
+  const [rightOpen, setRightOpen] = useState(true);
+  const rightRef = useRef<ImperativePanelHandle>(null);
 
   const refresh = () => listConnections().then(store.setConnections);
   useEffect(() => { refresh(); }, []);
@@ -54,6 +58,19 @@ export default function App() {
     setBrowseTable(null); setResult(null); setDetail(null); setPage(0);
     try { await pgConnect(id); setTables(await pgListObjects(id)); }
     catch (e) { setErr(JSON.stringify(e)); }
+  };
+
+  // 点连接名:未激活则激活+连接并展开表树;已激活则切换展开/收起
+  const onPickConn = async (id: string) => {
+    if (id === activeId) { setTreeOpen((o) => !o); return; }
+    setTreeOpen(true);
+    await onActivate(id);
+  };
+
+  const toggleRight = () => {
+    const p = rightRef.current;
+    if (!p) return;
+    if (p.isCollapsed()) p.expand(); else p.collapse();
   };
 
   const loadTablePage = async (t: string, p: number) => {
@@ -129,11 +146,18 @@ export default function App() {
               <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>连接</span>
               <button onClick={openNew} title="新建连接">＋</button>
             </div>
-            <div style={{ flexShrink: 0, maxHeight: "40%", overflow: "auto" }}>
-              <ConnectionList connections={connections} activeId={activeId} onPick={onActivate} onEdit={openEdit} />
-            </div>
-            <div style={{ flex: 1, minHeight: 0, overflow: "auto", borderTop: "1px solid var(--border)" }}>
-              {activeId && <ObjectTree tables={tables} active={activeTable} onSelect={onSelectTable} />}
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
+              <ConnectionList
+                connections={connections}
+                activeId={activeId}
+                expandedId={treeOpen ? activeId : null}
+                onPick={onPickConn}
+                onEdit={openEdit}
+                renderUnder={(c) =>
+                  c.id === activeId && treeOpen
+                    ? <ObjectTree tables={tables} active={activeTable} onSelect={onSelectTable} />
+                    : null}
+              />
             </div>
             <div style={{ padding: 8, flexShrink: 0, borderTop: "1px solid var(--border)" }}>
               <button onClick={toggle}>主题:{name}</button>
@@ -146,10 +170,16 @@ export default function App() {
         {/* 中栏:连接信息条 + (SQL 上 / 结果下,可拖动) */}
         <Panel defaultSize={58} minSize={25}>
           <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-            <div style={{ padding: "5px 10px", fontSize: 12, borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", color: activeConn ? "var(--fg)" : "var(--fg-muted)", flexShrink: 0 }}>
-              {activeConn
-                ? <span>🔌 {activeConn.name} · 库 <b>{activeConn.database}</b>{activeTable ? ` · 表 ${activeTable}` : ""}</span>
-                : <span>未连接 —— 点左侧连接</span>}
+            <div style={{ padding: "5px 10px", fontSize: 12, borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", color: activeConn ? "var(--fg)" : "var(--fg-muted)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {activeConn
+                  ? <>🔌 {activeConn.name} · 库 <b>{activeConn.database}</b>{activeTable ? ` · 表 ${activeTable}` : ""}</>
+                  : "未连接 —— 点左侧连接"}
+              </span>
+              <button onClick={toggleRight} title={rightOpen ? "隐藏详情栏" : "显示详情栏"}
+                style={{ flexShrink: 0, background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--fg-muted)", cursor: "pointer", padding: "1px 7px" }}>
+                {rightOpen ? "详情 ⟩" : "⟨ 详情"}
+              </button>
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
               <PanelGroup direction="vertical" autoSaveId="dbstudio-mid">
@@ -192,8 +222,9 @@ export default function App() {
 
         <HHandle />
 
-        {/* 右栏:表详情 */}
-        <Panel defaultSize={24} minSize={12}>
+        {/* 右栏:表详情(可折叠) */}
+        <Panel ref={rightRef} collapsible collapsedSize={0} defaultSize={24} minSize={12}
+          onCollapse={() => setRightOpen(false)} onExpand={() => setRightOpen(true)}>
           <aside style={{ height: "100%", overflow: "auto", background: "var(--bg-panel)" }}>
             {detail && activeTable
               ? <TableDetail detail={detail} table={activeTable} />
