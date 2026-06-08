@@ -2,6 +2,7 @@ use crate::core::connection::Connection;
 use crate::core::credentials::{self, KeyringBackend};
 use crate::core::repository::ConnectionRepo;
 use crate::error::{AppError, AppResult, ErrorKind};
+use crate::pg::client::PgPool;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -9,6 +10,7 @@ pub struct AppState {
     pub config_dir: PathBuf,
     pub backend: KeyringBackend,
     pub lock: Mutex<()>, // 串行化配置文件写入
+    pub pg_pool: PgPool,
 }
 
 impl AppState {

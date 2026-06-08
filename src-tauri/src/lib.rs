@@ -18,6 +18,7 @@ pub fn run() {
                 config_dir,
                 backend: crate::core::credentials::KeyringBackend,
                 lock: Mutex::new(()),
+                pg_pool: crate::pg::client::PgPool::default(),
             });
             Ok(())
         })
@@ -25,6 +26,11 @@ pub fn run() {
             commands::list_connections,
             commands::save_connection,
             commands::delete_connection,
+            pg::commands::pg_connect,
+            pg::commands::pg_list_objects,
+            pg::commands::pg_query,
+            pg::commands::pg_table_detail,
+            pg::commands::pg_commit_edits,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
