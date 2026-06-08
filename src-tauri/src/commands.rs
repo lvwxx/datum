@@ -55,10 +55,9 @@ pub fn save_connection(
 pub fn delete_connection(state: tauri::State<AppState>, id: String) -> AppResult<()> {
     let _g = state.lock.lock().unwrap();
     let mut all = state.repo().load()?;
-    let before = all.len();
+    let target = all.iter().find(|c| c.id == id).cloned()
+        .ok_or_else(|| AppError::new(ErrorKind::NotFound, "连接不存在"))?;
+    credentials::delete_password(&state.backend, &target)?;
     all.retain(|c| c.id != id);
-    if all.len() == before {
-        return Err(AppError::new(ErrorKind::NotFound, "连接不存在"));
-    }
     state.repo().save(&all)
 }

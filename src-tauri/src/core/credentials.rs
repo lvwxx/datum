@@ -39,6 +39,15 @@ pub fn load_password<B: SecretBackend>(backend: &B, conn: &Connection) -> AppRes
     }
 }
 
+/// 删除密码:Local 无需操作(随 json 删除);其余从密钥串删除。
+pub fn delete_password<B: SecretBackend>(backend: &B, conn: &Connection) -> AppResult<()> {
+    if conn.env.stores_password_in_plaintext() {
+        Ok(())
+    } else {
+        backend.delete(SERVICE, &account_key(conn))
+    }
+}
+
 pub struct KeyringBackend;
 impl SecretBackend for KeyringBackend {
     fn set(&self, service: &str, account: &str, secret: &str) -> AppResult<()> {
@@ -104,5 +113,17 @@ mod tests {
         assert_eq!(saved.plaintext_password, None);
         assert_eq!(b.store.borrow().len(), 1);
         assert_eq!(load_password(&b, &saved).unwrap(), "pw");
+    }
+
+    #[test]
+    fn delete_removes_keychain_entry_for_prod_only() {
+        let b = FakeBackend::default();
+        let saved = save_password(&b, conn(Env::Prod), "pw").unwrap();
+        assert_eq!(b.store.borrow().len(), 1);
+        delete_password(&b, &saved).unwrap();
+        assert!(b.store.borrow().is_empty());
+        // local: no-op, must not error
+        let local = save_password(&b, conn(Env::Local), "pw").unwrap();
+        assert!(delete_password(&b, &local).is_ok());
     }
 }
