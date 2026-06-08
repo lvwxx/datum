@@ -5,8 +5,21 @@ export interface QueryResult {
   rows: (string | null)[][];
   affected: number | null;
 }
-export interface ColumnInfo { name: string; dataType: string; isPk: boolean; }
-export interface TableDetail { columns: ColumnInfo[]; }
+export interface ColumnInfo {
+  name: string;
+  dataType: string;
+  default: string | null;
+  comment: string | null;
+  notNull: boolean;
+  isPk: boolean;
+}
+export interface IndexInfo {
+  name: string;
+  columns: string;
+  isPrimary: boolean;
+  isUnique: boolean;
+}
+export interface TableDetail { columns: ColumnInfo[]; indexes: IndexInfo[]; }
 export interface CellEdit {
   table: string; pkCol: string; pkValue: string; column: string; newValue: string;
 }
