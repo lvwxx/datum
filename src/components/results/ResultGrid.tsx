@@ -21,13 +21,22 @@ export function ResultGrid(props: {
   return (
     <div tabIndex={0}
          onKeyDown={(e) => { if (e.metaKey && e.key.toLowerCase() === "s") { e.preventDefault(); props.onCommit(); } }}
-         style={{ padding: 8, outline: "none" }}>
+         style={{ outline: "none" }}>
       {props.pkCol === null &&
         <div style={{ color: "var(--error)", fontSize: 11, marginBottom: 6 }}>该结果无主键,暂不可编辑</div>}
       <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
         <thead>
-          <tr style={{ color: "var(--fg-muted)", textAlign: "left" }}>
-            {columns.map((c) => <th key={c} style={{ padding: 4, fontWeight: 500 }}>{c}</th>)}
+          <tr style={{ textAlign: "left" }}>
+            {columns.map((c, i) => (
+              <th key={`${c}-${i}`}
+                  style={{
+                    padding: 4, fontWeight: 600, color: "var(--fg-muted)",
+                    position: "sticky", top: 0, zIndex: 1,
+                    background: "var(--bg-panel)",
+                    borderBottom: "2px solid var(--border)",
+                    whiteSpace: "nowrap",
+                  }}>{c}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
