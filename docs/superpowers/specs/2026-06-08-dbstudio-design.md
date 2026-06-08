@@ -1,0 +1,131 @@
+# DBStudio 设计文档
+
+- 日期:2026-06-08
+- 状态:待评审
+- 类型:自用数据库 GUI 工具(TablePlus 精简仿写)
+
+## 1. 目标与范围
+
+做一个自用的桌面数据库管理工具,支持 **PostgreSQL** 和 **Redis** 两种数据库。
+对标 TablePlus 的核心体验(三栏布局、即时编辑、SQL 编辑器),但只做自己日常用到的功能,砍掉一切用不到的部分。
+
+### 平台与技术栈
+- **框架**:Tauri(Rust 后端 + Web 前端)
+- **目标平台**:macOS(Tauri 本身跨平台,但 v1 只验证 macOS)
+- **PG 驱动**:`sqlx` 或 `tokio-postgres`(Rust)
+- **Redis 驱动**:`redis-rs`(Rust)
+- **前端**:Web 技术栈(具体框架在实现计划阶段定,倾向 React + Vite 或 Svelte)
+
+### v1 功能范围(MVP)
+| 编号 | 功能 |
+|------|------|
+| A | 连接管理:保存/切换多个 PG/Redis 连接 |
+| B | PG:浏览表数据 |
+| C | PG:行内编辑(即时写库) |
+| D | PG:SQL 编辑器(写、执行、看结果) |
+| E | Redis:浏览 key(SCAN 模式过滤、按 `:` 折叠树、切 DB) |
+| F | Redis:执行命令 |
+| G | SSH 隧道:通过跳板机连内网数据库 |
+
+### 明确不做(v1 范围外)
+- MySQL / SQLite / MongoDB 等其它数据库
+- 主密码加密模式(以后按需加)
+- 数据库结构可视化编辑、ER 图、导入向导等高级功能
+- 多人协作 / 同步
+
+## 2. UI 布局
+
+经评审确认的**三栏布局**:
+
+```
+┌──────────┬─────────────────────────┬──────────────┐
+│  左栏    │        中栏             │    右栏      │
+│ 连接/对象 │   上:SQL/命令编辑器     │  表/KEY 详情 │
+│  树      │   ─────────────────     │              │
+│          │   下:结果数据表格       │              │
+└──────────┴─────────────────────────┴──────────────┘
+```
+
+### 左栏 — 连接 / 对象树
+- 列出所有已打开连接,每个连接带**环境角标**:`LOCAL`(青)/`STAGING`/`PROD`(红,显眼防误操作)
+- PG:连接 → schema → 表的树
+- Redis:连接 → DB → 按 `:` 折叠的 key 命名空间树,顶部有 SCAN 模式过滤框
+
+### 中栏 — 纵向拆分(可拖拽调整比例)
+- **上半**:SQL 编辑器(PG)/ 命令输入(Redis),`⌘↵` 运行
+- **下半**:结果表格
+  - PG:查询结果或表数据,**双击单元格即时改 → 直接写库**
+  - Redis:按 value 类型渲染(STRING→文本框、HASH/LIST/SET/ZSET→表格、JSON→高亮)
+- **点左栏对象 = 隐式查询**:点 PG 表自动生成 `SELECT * FROM 表`;点 Redis key 自动填 `HGETALL`/`GET` 等并执行
+
+### 右栏 — 详情
+- PG:当前表的列 / 索引 / 外键 / DDL
+- Redis:当前 key 的类型 / TTL / 内存占用 / 编码,含"设置 TTL""删除 KEY"操作
+
+## 3. 架构(方案 A:两套独立驱动模块)
+
+```
+┌─────────────────────────────────────────────┐
+│              前端 (Web)                       │
+│  - 三栏 UI 组件                               │
+│  - 按连接类型路由到对应 Tauri command         │
+└───────────────────┬─────────────────────────┘
+                    │ Tauri invoke (IPC)
+┌───────────────────┴─────────────────────────┐
+│              Rust 后端                        │
+│  ┌─────────────┐   ┌──────────┐  ┌────────┐ │
+│  │  pg 模块    │   │ redis模块 │  │ core   │ │
+│  │ pg_connect  │   │redis_scan │  │ 公共层 │ │
+│  │ pg_query    │   │redis_get  │  │        │ │
+│  │ pg_update_  │   │redis_exec │  │ ·连接  │ │
+│  │   cell      │   │redis_set  │  │  配置  │ │
+│  │ pg_table_   │   │redis_key_ │  │ ·钥匙串│ │
+│  │   detail    │   │  detail   │  │ ·SSH   │ │
+│  └─────────────┘   └──────────┘  │ ·错误  │ │
+│                                   └────────┘ │
+└──────────────────────────────────────────────┘
+```
+
+### core 公共层(薄)
+- **连接配置模型**:`Connection { id, name, kind: Pg|Redis, env: Local|Staging|Prod, host, port, user, db, ssh_config }`
+- **凭据存储**(方案 4 混合 + 按环境区分):
+  - `env == Local` → 密码明文存本地配置文件
+  - `env == Staging | Prod` → 密码存 macOS 钥匙串(`keyring` crate),配置文件只存引用
+  - 非密码信息(host/port/user/ssh 等)一律存本地配置文件
+- **SSH 隧道**:建立本地端口转发,数据库连接走隧道(crate 候选:`russh` / `ssh2`)
+- **统一错误类型**:后端错误转成结构化错误返回前端
+
+### pg 模块
+- `pg_connect`、`pg_list_objects`(schema/表)、`pg_query(sql)`、`pg_update_cell(table, pk, col, value)`、`pg_table_detail(table)`
+- 行内编辑:根据主键定位行生成 `UPDATE`,立即执行(无暂存)
+
+### redis 模块
+- `redis_connect`、`redis_scan(pattern, db)`、`redis_get_key(key)`、`redis_exec(command)`、`redis_set_value(...)`、`redis_key_detail(key)`、`redis_set_ttl`、`redis_del`
+
+## 4. 数据流
+
+**浏览 PG 表**:点左栏表 → 前端调 `pg_query("SELECT * FROM t LIMIT n")` → 结果渲染到中栏下半 → 同时调 `pg_table_detail` 填右栏。
+
+**编辑 PG 单元格**:双击改值 → 前端调 `pg_update_cell` → 后端用主键生成 `UPDATE` 立即执行 → 成功后刷新该行 / 失败弹出结构化错误。
+
+**Redis 看 key**:点左栏 key → 调 `redis_get_key` → 按类型渲染中栏下半 + 调 `redis_key_detail` 填右栏。
+
+**连接建立(带 SSH)**:读连接配置 → 如配了 SSH 先建隧道拿到本地端口 → 用本地端口连数据库 → 凭据按 env 从明文/钥匙串取。
+
+## 5. 错误处理
+- 后端所有操作返回 `Result<T, AppError>`,`AppError` 含 `kind`(连接失败/SQL 错误/权限/超时/隧道失败)、`message`、可选 `detail`
+- 前端按 `kind` 给出可读提示;PROD 连接的写操作失败要醒目提示
+- 连接断开自动检测并在左栏标灰,提供重连
+
+## 6. 测试策略
+- **core 层**:单元测试连接配置序列化、凭据按 env 路由(明文 vs 钥匙串)、SSH 配置解析
+- **pg 模块**:用 testcontainers / 本地 docker PG 跑集成测试(查询、行内编辑生成的 SQL 正确性、表详情)
+- **redis 模块**:本地 docker Redis 集成测试(SCAN、各类型读写、TTL、命令执行)
+- **前端**:关键组件(三栏路由、按类型渲染结果)的组件测试
+- 优先保证"行内编辑生成的 UPDATE / Redis 写命令"正确,这是误操作风险最高的地方
+
+## 7. 后续可扩展点(非 v1)
+- 主密码加密模式
+- 更多数据库(届时再评估是否引入 trait 抽象)
+- 行内编辑的"暂存-确认"安全模式
+- 导出/导入、DDL 编辑
