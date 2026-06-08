@@ -8,6 +8,9 @@ import { listConnections, saveConnection, deleteConnection } from "./api/connect
 import { pgConnect, pgListObjects, pgQuery, pgTableDetail, pgCommitEdits } from "./api/pg";
 import type { QueryResult, TableDetail as Detail, CellEdit } from "./api/pg";
 import { Modal } from "./components/Modal";
+import { ContextMenu } from "./components/ContextMenu";
+import { buildCreateTable, buildInsert } from "./lib/sqlgen";
+import { copyToClipboard } from "./lib/clipboard";
 import { ConnectionList } from "./components/Sidebar/ConnectionList";
 import { ConnectionForm } from "./components/Sidebar/ConnectionForm";
 import { ObjectTree } from "./components/Sidebar/ObjectTree";
@@ -54,6 +57,9 @@ export default function App() {
   const rightRef = useRef<ImperativePanelHandle>(null);
   const [menu, setMenu] = useState<{ c: Connection; x: number; y: number } | null>(null);
   const [confirmDel, setConfirmDel] = useState<Connection | null>(null);
+  const [tableMenu, setTableMenu] = useState<{ table: string; x: number; y: number } | null>(null);
+  const [colMenu, setColMenu] = useState<{ x: number; y: number } | null>(null);
+  const [ddl, setDdl] = useState<{ table: string; sql: string } | null>(null);
 
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -93,6 +99,7 @@ export default function App() {
   // 点表:每次都新开一个 tab
   const onSelectTable = async (t: string) => {
     if (!activeId) return;
+    setDdl(null);
     const id = crypto.randomUUID();
     const sql = pageSql(t, 0);
     const fresh: Tab = {
@@ -188,6 +195,21 @@ export default function App() {
     refresh();
   };
 
+  // 查看建表语句:取该表详情,合成 DDL 显示在右栏
+  const showDdl = async (table: string) => {
+    if (!activeId) return;
+    try {
+      const detail = await pgTableDetail(activeId, table);
+      setDdl({ table, sql: buildCreateTable(table, detail) });
+      rightRef.current?.expand();
+    } catch { /* 忽略 */ }
+  };
+
+  // 复制当前表的 INSERT 模板
+  const copyInsert = () => {
+    if (tab?.detail && tab.table) copyToClipboard(buildInsert(tab.table, tab.detail));
+  };
+
   return (
     <div style={{ height: "100vh" }}>
       <PanelGroup direction="horizontal" autoSaveId="dbstudio-cols">
@@ -208,7 +230,8 @@ export default function App() {
                 onContext={(c, x, y) => setMenu({ c, x, y })}
                 renderUnder={(c) =>
                   c.id === activeId && treeOpen
-                    ? <ObjectTree tables={tables} active={tab?.table ?? null} onSelect={onSelectTable} />
+                    ? <ObjectTree tables={tables} active={tab?.table ?? null} onSelect={onSelectTable}
+                        onContext={(table, x, y) => setTableMenu({ table, x, y })} />
                     : null}
               />
             </div>
@@ -316,10 +339,31 @@ export default function App() {
         {/* 右栏:表详情(可折叠) */}
         <Panel ref={rightRef} collapsible collapsedSize={0} defaultSize={24} minSize={12}
           onCollapse={() => setRightOpen(false)} onExpand={() => setRightOpen(true)}>
-          <aside style={{ height: "100%", overflow: "auto", background: "var(--bg-panel)" }}>
-            {tab?.detail && tab.table
-              ? <TableDetail detail={tab.detail} table={tab.table} />
-              : <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 10 }}>详情</div>}
+          <aside style={{ height: "100%", overflow: "hidden", background: "var(--bg-panel)", display: "flex", flexDirection: "column" }}>
+            {ddl ? (
+              <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>建表语句 · <b style={{ color: "var(--fg)" }}>{ddl.table}</b></span>
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => copyToClipboard(ddl.sql)} title="复制全部"
+                      style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 8, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>复制</button>
+                    <button onClick={() => setDdl(null)} title="关闭"
+                      style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "3px 8px", cursor: "pointer", fontSize: 11, color: "var(--fg-muted)" }}>关闭</button>
+                  </span>
+                </div>
+                <textarea readOnly value={ddl.sql} spellCheck={false}
+                  style={{ flex: 1, minHeight: 0, border: 0, borderRadius: 0, resize: "none",
+                           fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12,
+                           padding: 10, background: "var(--bg)", color: "var(--fg)" }} />
+              </div>
+            ) : tab?.detail && tab.table ? (
+              <div style={{ overflow: "auto", height: "100%" }}>
+                <TableDetail detail={tab.detail} table={tab.table}
+                  onColContext={(x, y) => setColMenu({ x, y })} />
+              </div>
+            ) : (
+              <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 10 }}>详情</div>
+            )}
           </aside>
         </Panel>
       </PanelGroup>
@@ -335,22 +379,26 @@ export default function App() {
         </Modal>
       )}
 
-      {/* 右键连接的上下文菜单 */}
+      {/* 右键连接 */}
       {menu && (
-        <>
-          <div onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}
-               style={{ position: "fixed", inset: 0, zIndex: 200 }} />
-          <div style={{
-            position: "fixed", left: menu.x, top: menu.y, zIndex: 201, minWidth: 120,
-            background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8,
-            boxShadow: "0 6px 20px rgba(0,0,0,0.2)", padding: 4, fontSize: 13,
-          }}>
-            <div onClick={() => { openEdit(menu.c); setMenu(null); }}
-                 style={{ padding: "6px 10px", cursor: "pointer", borderRadius: 5 }}>编辑</div>
-            <div onClick={() => { setConfirmDel(menu.c); setMenu(null); }}
-                 style={{ padding: "6px 10px", cursor: "pointer", borderRadius: 5, color: "var(--error)" }}>删除</div>
-          </div>
-        </>
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={[
+          { label: "编辑", onClick: () => openEdit(menu.c) },
+          { label: "删除", danger: true, onClick: () => setConfirmDel(menu.c) },
+        ]} />
+      )}
+
+      {/* 右键表 */}
+      {tableMenu && (
+        <ContextMenu x={tableMenu.x} y={tableMenu.y} onClose={() => setTableMenu(null)} items={[
+          { label: "查看建表语句", onClick: () => showDdl(tableMenu.table) },
+        ]} />
+      )}
+
+      {/* 右键结构字段 */}
+      {colMenu && (
+        <ContextMenu x={colMenu.x} y={colMenu.y} onClose={() => setColMenu(null)} items={[
+          { label: "复制 INSERT 语句", onClick: copyInsert },
+        ]} />
       )}
 
       {/* 删除二次确认 */}

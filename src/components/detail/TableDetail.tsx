@@ -13,7 +13,11 @@ const check = (on: boolean) => (on ? <span style={{ color: "var(--accent)" }}>âœ
 const dim = (v: string | null) =>
   v == null || v === "" ? <span style={{ color: "var(--fg-muted)" }}>â€”</span> : v;
 
-export function TableDetail(props: { detail: Detail; table: string }) {
+export function TableDetail(props: {
+  detail: Detail;
+  table: string;
+  onColContext?: (x: number, y: number) => void;
+}) {
   const { columns, indexes } = props.detail;
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", fontSize: 11 }}>
@@ -33,7 +37,8 @@ export function TableDetail(props: { detail: Detail; table: string }) {
           </thead>
           <tbody>
             {columns.map((c) => (
-              <tr key={c.name}>
+              <tr key={c.name}
+                  onContextMenu={(e) => { e.preventDefault(); props.onColContext?.(e.clientX, e.clientY); }}>
                 <td style={{ ...td, color: "var(--syn-entity)" }}>{c.name}</td>
                 <td style={{ ...td, color: "var(--syn-type)" }}>{c.dataType}</td>
                 <td style={td}>{dim(c.default)}</td>

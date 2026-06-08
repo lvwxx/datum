@@ -4,12 +4,14 @@ export function ObjectTree(props: {
   tables: string[];
   active: string | null;
   onSelect: (t: string) => void;
+  onContext?: (t: string, x: number, y: number) => void;
 }) {
   return (
     <div style={{ padding: "2px 0" }}>
       {props.tables.map((t) => (
         <div key={t}
              onClick={() => props.onSelect(t)}
+             onContextMenu={(e) => { e.preventDefault(); props.onContext?.(t, e.clientX, e.clientY); }}
              style={{
                padding: "3px 8px 3px 28px", cursor: "pointer", fontSize: 12,
                display: "flex", alignItems: "center", gap: 4, overflow: "hidden",
