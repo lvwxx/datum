@@ -31,7 +31,8 @@ export function ConnectionForm(props: {
 
       <label style={labelStyle}>
         <span style={captionStyle}>名称</span>
-        <input placeholder="例如 prod-pg" value={c.name} onChange={(e) => upd("name", e.target.value)} required />
+        <input placeholder="例如 prod-pg" value={c.name} onChange={(e) => upd("name", e.target.value)}
+               autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
       </label>
 
       <label style={labelStyle}>
@@ -45,7 +46,8 @@ export function ConnectionForm(props: {
 
       <label style={labelStyle}>
         <span style={captionStyle}>主机</span>
-        <input placeholder="127.0.0.1" value={c.host} onChange={(e) => upd("host", e.target.value)} />
+        <input placeholder="127.0.0.1" value={c.host} onChange={(e) => upd("host", e.target.value)}
+               autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       </label>
 
       <label style={labelStyle}>
@@ -56,12 +58,14 @@ export function ConnectionForm(props: {
 
       <label style={labelStyle}>
         <span style={captionStyle}>用户</span>
-        <input placeholder="postgres" value={c.user} onChange={(e) => upd("user", e.target.value)} />
+        <input placeholder="postgres" value={c.user} onChange={(e) => upd("user", e.target.value)}
+               autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       </label>
 
       <label style={labelStyle}>
         <span style={captionStyle}>数据库</span>
-        <input placeholder="postgres" value={c.database} onChange={(e) => upd("database", e.target.value)} />
+        <input placeholder="postgres" value={c.database} onChange={(e) => upd("database", e.target.value)}
+               autoCapitalize="none" autoCorrect="off" spellCheck={false} />
       </label>
 
       <label style={labelStyle}>
