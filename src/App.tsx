@@ -177,8 +177,8 @@ export default function App() {
                   : "未连接 —— 点左侧连接"}
               </span>
               <button onClick={toggleRight} title={rightOpen ? "隐藏详情栏" : "显示详情栏"}
-                style={{ flexShrink: 0, background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--fg-muted)", cursor: "pointer", padding: "1px 7px" }}>
-                {rightOpen ? "详情 ⟩" : "⟨ 详情"}
+                style={{ flexShrink: 0, background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--fg-muted)", cursor: "pointer", padding: "1px 8px", fontSize: 14, lineHeight: 1.4 }}>
+                {rightOpen ? "»" : "«"}
               </button>
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
