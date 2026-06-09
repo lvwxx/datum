@@ -16,13 +16,18 @@ test("double click opens cell modal and stages on apply", () => {
   );
 });
 
-test("single click highlights the row", () => {
-  render(<ResultGrid result={result} pkCol="id" dirtyKeys={new Set()} onStage={() => {}} onCommit={() => {}} />);
-  const cell = screen.getByText("Bob");
-  const row = cell.closest("tr")!;
-  fireEvent.click(row);
-  // 选中行的单元格背景使用 selection 变量
-  const td = cell.closest("td")!;
+test("clicking a row fires onSelectRow", () => {
+  const onSelectRow = vi.fn();
+  render(<ResultGrid result={result} pkCol="id" dirtyKeys={new Set()} selectedRow={null}
+                     onSelectRow={onSelectRow} onStage={() => {}} onCommit={() => {}} />);
+  fireEvent.click(screen.getByText("Bob").closest("tr")!);
+  expect(onSelectRow).toHaveBeenCalledWith(1);
+});
+
+test("selected row is highlighted", () => {
+  render(<ResultGrid result={result} pkCol="id" dirtyKeys={new Set()} selectedRow={1}
+                     onSelectRow={() => {}} onStage={() => {}} onCommit={() => {}} />);
+  const td = screen.getByText("Bob").closest("td")!;
   expect(td.style.background).toContain("--selection");
 });
 
