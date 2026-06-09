@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { QueryResult, CellEdit } from "../../api/pg";
 import { Modal } from "../Modal";
 
@@ -22,11 +22,27 @@ export function ResultGrid(props: {
   const [cell, setCell] = useState<{ r: number; c: number } | null>(null);
   const [draft, setDraft] = useState("");
   const [widths, setWidths] = useState<Record<number, number>>({});
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [containerW, setContainerW] = useState(0);
 
   // 结果列集变化(切表/换查询)时重置列宽
   useEffect(() => { setWidths({}); }, [columns.join("|")]);
 
-  const colWidth = (i: number) => widths[i] ?? DEFAULT_W;
+  // 跟随结果区(滚动容器)宽度变化
+  useEffect(() => {
+    const el = rootRef.current?.parentElement;
+    if (!el) return;
+    setContainerW(el.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setContainerW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // 单列结果(如 EXPLAIN)默认占容器宽度的 50%,其余 160
+  const defaultW = () =>
+    columns.length === 1 && containerW > 0 ? Math.max(DEFAULT_W, Math.floor(containerW * 0.5)) : DEFAULT_W;
+  const colWidth = (i: number) => widths[i] ?? defaultW();
   const totalWidth = columns.reduce((s, _c, i) => s + colWidth(i), 0);
 
   const startResize = (i: number, e: React.MouseEvent) => {
@@ -65,7 +81,7 @@ export function ResultGrid(props: {
   };
 
   return (
-    <div tabIndex={0} data-keep-sel
+    <div ref={rootRef} tabIndex={0} data-keep-sel
          onKeyDown={(e) => { if (e.metaKey && e.key.toLowerCase() === "s") { e.preventDefault(); props.onCommit(); } }}
          style={{ outline: "none" }}>
       {props.pkCol === null &&
@@ -109,7 +125,9 @@ export function ResultGrid(props: {
                           borderBottom: "1px solid var(--border)",
                           boxShadow: dirty ? "inset 0 0 0 1px var(--accent)" : undefined,
                         }}>
-                      <div style={{ ...ellipsis, padding: "3px 6px" }}>
+                      <div style={columns.length === 1
+                        ? { padding: "3px 6px", whiteSpace: "pre-wrap", wordBreak: "break-word" }
+                        : { ...ellipsis, padding: "3px 6px" }}>
                         {cellVal ?? <span style={{ color: "var(--fg-muted)" }}>NULL</span>}
                       </div>
                     </td>
