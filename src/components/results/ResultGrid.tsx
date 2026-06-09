@@ -65,7 +65,7 @@ export function ResultGrid(props: {
   };
 
   return (
-    <div tabIndex={0}
+    <div tabIndex={0} data-keep-sel
          onKeyDown={(e) => { if (e.metaKey && e.key.toLowerCase() === "s") { e.preventDefault(); props.onCommit(); } }}
          style={{ outline: "none" }}>
       {props.pkCol === null &&
