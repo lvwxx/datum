@@ -379,7 +379,7 @@ export default function App() {
                           <ResultGrid result={tab.result} pkCol={pkCol} dirtyKeys={dirtyKeys}
                             onStage={stageEdit} onCommit={commit}
                             selectedRow={tab.selectedRow}
-                            onSelectRow={(i) => patch(tab.id, { selectedRow: i })}
+                            onSelectRow={(i) => { patch(tab.id, { selectedRow: i }); rightRef.current?.expand(); }}
                             onRowContext={(rowIndex, x, y) => setRowMenu({ rowIndex, x, y })} />}
                       </div>
                       {/* 分页(右下) */}
