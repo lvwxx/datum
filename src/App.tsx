@@ -100,6 +100,18 @@ export default function App() {
   const patch = (id: string, p: Partial<Tab>) =>
     setTabs((ts) => ts.map((t) => (t.id === id ? { ...t, ...p } : t)));
 
+  // 点击保留区(结果行 / 行详情)以外的地方,收起行详情
+  useEffect(() => {
+    const id = tab?.id;
+    if (!id || tab?.selectedRow == null) return;
+    const onDocClick = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && !el.closest("[data-keep-sel]")) patch(id, { selectedRow: null });
+    };
+    window.addEventListener("click", onDocClick);
+    return () => window.removeEventListener("click", onDocClick);
+  }, [tab?.id, tab?.selectedRow]);
+
   const tabConn = connections.find((c) => c.id === tab?.connId) ?? null;
   const headConn = tabConn ?? connections.find((c) => c.id === activeId) ?? null;
   const pkCol = tab?.detail?.columns.find((c) => c.isPk)?.name ?? null;
