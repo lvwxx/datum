@@ -85,7 +85,6 @@ export default function App() {
   const [confirmDel, setConfirmDel] = useState<Connection | null>(null);
   const [tableMenu, setTableMenu] = useState<{ table: string; x: number; y: number } | null>(null);
   const [colMenu, setColMenu] = useState<{ x: number; y: number } | null>(null);
-  const [rowMenu, setRowMenu] = useState<{ rowIndex: number; x: number; y: number } | null>(null);
   const [ddl, setDdl] = useState<{ table: string; sql: string; x: number; y: number } | null>(null);
 
   const copyWithToast = (text: string) => { copyToClipboard(text); toast.success("已复制"); };
@@ -415,7 +414,7 @@ export default function App() {
                             onStage={stageEdit} onCommit={commit}
                             selectedRow={tab.selectedRow}
                             onSelectRow={(i) => { patch(tab.id, { selectedRow: i }); rightRef.current?.expand(); }}
-                            onRowContext={(rowIndex, x, y) => setRowMenu({ rowIndex, x, y })} />}
+                            onCopyInsertRow={(i) => copyInsertRow(i)} />}
                       </div>
                       {/* 分页(右下) */}
                       {tab.browseTable && (
@@ -501,13 +500,6 @@ export default function App() {
       {colMenu && (
         <ContextMenu x={colMenu.x} y={colMenu.y} onClose={() => setColMenu(null)} items={[
           { label: "复制 INSERT 语句", onClick: copyInsert },
-        ]} />
-      )}
-
-      {/* 右键结果行 */}
-      {rowMenu && (
-        <ContextMenu x={rowMenu.x} y={rowMenu.y} onClose={() => setRowMenu(null)} items={[
-          { label: "复制 INSERT 语句", onClick: () => copyInsertRow(rowMenu.rowIndex) },
         ]} />
       )}
 

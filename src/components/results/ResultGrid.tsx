@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { QueryResult, CellEdit } from "../../api/pg";
 import { Modal } from "../Modal";
+import { ContextMenu } from "../ContextMenu";
 
 const DEFAULT_W = 160;
 const MIN_W = 48;
@@ -11,7 +12,7 @@ export function ResultGrid(props: {
   dirtyKeys: Set<string>;
   onStage: (e: Omit<CellEdit, "table">) => void;
   onCommit: () => void;
-  onRowContext?: (rowIndex: number, x: number, y: number) => void;
+  onCopyInsertRow?: (rowIndex: number) => void;
   selectedRow?: number | null;
   onSelectRow?: (rowIndex: number) => void;
 }) {
@@ -21,6 +22,7 @@ export function ResultGrid(props: {
   const selectedRow = props.selectedRow ?? null;
   const [cell, setCell] = useState<{ r: number; c: number } | null>(null);
   const [draft, setDraft] = useState("");
+  const [menu, setMenu] = useState<{ r: number; c: number; x: number; y: number } | null>(null);
   const [widths, setWidths] = useState<Record<number, number>>({});
   const rootRef = useRef<HTMLDivElement>(null);
   const [containerW, setContainerW] = useState(0);
@@ -109,8 +111,7 @@ export function ResultGrid(props: {
           {rows.map((row, ri) => {
             const selected = selectedRow === ri;
             return (
-              <tr key={ri} onClick={() => props.onSelectRow?.(ri)}
-                  onContextMenu={(e) => { e.preventDefault(); props.onSelectRow?.(ri); props.onRowContext?.(ri, e.clientX, e.clientY); }}>
+              <tr key={ri} onClick={() => props.onSelectRow?.(ri)}>
                 {row.map((cellVal, ci) => {
                   const pkValue = pkIndex >= 0 ? row[pkIndex] ?? "" : "";
                   const dirty = props.dirtyKeys.has(`${pkValue}|${columns[ci]}`);
@@ -118,6 +119,7 @@ export function ResultGrid(props: {
                   return (
                     <td key={ci}
                         onDoubleClick={() => openCell(ri, ci)}
+                        onContextMenu={(e) => { e.preventDefault(); props.onSelectRow?.(ri); setMenu({ r: ri, c: ci, x: e.clientX, y: e.clientY }); }}
                         title="双击查看完整内容"
                         style={{
                           padding: 0, background: bg,
@@ -170,6 +172,13 @@ export function ResultGrid(props: {
             </div>
           </div>
         </Modal>
+      )}
+
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={[
+          { label: editable ? "编辑" : "查看", onClick: () => openCell(menu.r, menu.c) },
+          { label: "复制 INSERT 语句", onClick: () => props.onCopyInsertRow?.(menu.r) },
+        ]} />
       )}
     </div>
   );
