@@ -33,13 +33,21 @@ fn qerr(e: redis::RedisError) -> AppError {
     AppError::new(ErrorKind::Query, "Redis 命令失败").with_detail(e.to_string())
 }
 
+/// 字节转 UTF-8,非法字节用替换符(兼容二进制值)。
+fn lossy(b: Vec<u8>) -> String {
+    String::from_utf8_lossy(&b).into_owned()
+}
+
 /// 把任意 Redis 回复转成可读字符串(版本无关,基于 FromRedisValue)。
 fn format_reply(v: &redis::Value) -> String {
     if let Ok(s) = String::from_redis_value(v) {
         return s;
     }
-    if let Ok(list) = Vec::<String>::from_redis_value(v) {
-        return list.join("\n");
+    if let Ok(bytes) = Vec::<u8>::from_redis_value(v) {
+        return String::from_utf8_lossy(&bytes).into_owned();
+    }
+    if let Ok(list) = Vec::<Vec<u8>>::from_redis_value(v) {
+        return list.iter().map(|b| String::from_utf8_lossy(b).into_owned()).collect::<Vec<_>>().join("\n");
     }
     format!("{:?}", v)
 }
@@ -80,26 +88,27 @@ impl RedisPool {
     pub async fn get_value(&self, id: &str, key: &str) -> AppResult<KeyValue> {
         let mut con = self.con(id).await?;
         let t: String = redis::cmd("TYPE").arg(key).query_async(&mut con).await.map_err(qerr)?;
+        // 按字节读取,再 lossy 转 UTF-8:兼容二进制/非 UTF-8 的值,避免转换报错。
         let (columns, rows): (Vec<String>, Vec<Vec<String>>) = match t.as_str() {
             "string" => {
-                let v: Option<String> = redis::cmd("GET").arg(key).query_async(&mut con).await.map_err(qerr)?;
-                (vec!["value".into()], vec![vec![v.unwrap_or_default()]])
+                let v: Option<Vec<u8>> = redis::cmd("GET").arg(key).query_async(&mut con).await.map_err(qerr)?;
+                (vec!["value".into()], vec![vec![v.map(lossy).unwrap_or_default()]])
             }
             "hash" => {
-                let m: Vec<(String, String)> = redis::cmd("HGETALL").arg(key).query_async(&mut con).await.map_err(qerr)?;
-                (vec!["field".into(), "value".into()], m.into_iter().map(|(f, v)| vec![f, v]).collect())
+                let m: Vec<(Vec<u8>, Vec<u8>)> = redis::cmd("HGETALL").arg(key).query_async(&mut con).await.map_err(qerr)?;
+                (vec!["field".into(), "value".into()], m.into_iter().map(|(f, v)| vec![lossy(f), lossy(v)]).collect())
             }
             "list" => {
-                let l: Vec<String> = redis::cmd("LRANGE").arg(key).arg(0).arg(-1).query_async(&mut con).await.map_err(qerr)?;
-                (vec!["index".into(), "value".into()], l.into_iter().enumerate().map(|(i, v)| vec![i.to_string(), v]).collect())
+                let l: Vec<Vec<u8>> = redis::cmd("LRANGE").arg(key).arg(0).arg(-1).query_async(&mut con).await.map_err(qerr)?;
+                (vec!["index".into(), "value".into()], l.into_iter().enumerate().map(|(i, v)| vec![i.to_string(), lossy(v)]).collect())
             }
             "set" => {
-                let s: Vec<String> = redis::cmd("SMEMBERS").arg(key).query_async(&mut con).await.map_err(qerr)?;
-                (vec!["member".into()], s.into_iter().map(|m| vec![m]).collect())
+                let s: Vec<Vec<u8>> = redis::cmd("SMEMBERS").arg(key).query_async(&mut con).await.map_err(qerr)?;
+                (vec!["member".into()], s.into_iter().map(|m| vec![lossy(m)]).collect())
             }
             "zset" => {
-                let z: Vec<(String, String)> = redis::cmd("ZRANGE").arg(key).arg(0).arg(-1).arg("WITHSCORES").query_async(&mut con).await.map_err(qerr)?;
-                (vec!["member".into(), "score".into()], z.into_iter().map(|(m, sc)| vec![m, sc]).collect())
+                let z: Vec<(Vec<u8>, String)> = redis::cmd("ZRANGE").arg(key).arg(0).arg(-1).arg("WITHSCORES").query_async(&mut con).await.map_err(qerr)?;
+                (vec!["member".into(), "score".into()], z.into_iter().map(|(m, sc)| vec![lossy(m), sc]).collect())
             }
             _ => (vec![], vec![]),
         };
