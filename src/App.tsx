@@ -107,7 +107,10 @@ export default function App() {
     if (!id || tab?.selectedRow == null) return;
     const onDocClick = (e: MouseEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && !el.closest("[data-keep-sel]")) patch(id, { selectedRow: null });
+      if (el && !el.closest("[data-keep-sel]")) {
+        patch(id, { selectedRow: null });
+        rightRef.current?.collapse();
+      }
     };
     window.addEventListener("mousedown", onDocClick, true);
     return () => window.removeEventListener("mousedown", onDocClick, true);
@@ -200,6 +203,17 @@ export default function App() {
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
       const result = await pgQuery(tab.connId, q);
+      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null });
+    } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
+  };
+
+  // EXPLAIN 当前/选中的 SQL(仅 PG,纯 EXPLAIN 不执行查询)
+  const explain = async () => {
+    if (!tab || tab.kind === "redis") return;
+    const q = sqlToRun();
+    if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
+    try {
+      const result = await pgQuery(tab.connId, `EXPLAIN ${q}`);
       patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
@@ -378,10 +392,18 @@ export default function App() {
                             : tab.result ? `${tab.result.rows.length} 行 · ${tab.result.columns.length} 列${tab.result.affected != null ? ` · 影响 ${tab.result.affected}` : ""}`
                             : "就绪"}
                         </span>
-                        <button onClick={runSql} title="运行 (⌘↵)"
-                          style={{ flexShrink: 0, background: "var(--accent)", color: "#fff", border: 0, borderRadius: 4, padding: "2px 12px", fontSize: 11, cursor: "pointer" }}>
-                          ▶ 运行 ⌘↵
-                        </button>
+                        <span style={{ flexShrink: 0, display: "flex", gap: 6 }}>
+                          {tab.kind !== "redis" && (
+                            <button onClick={explain} title="查看执行计划(EXPLAIN)"
+                              style={{ background: "transparent", color: "var(--fg-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 10px", fontSize: 11, cursor: "pointer" }}>
+                              Explain
+                            </button>
+                          )}
+                          <button onClick={runSql} title="运行 (⌘↵)"
+                            style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 4, padding: "2px 12px", fontSize: 11, cursor: "pointer" }}>
+                            ▶ 运行 ⌘↵
+                          </button>
+                        </span>
                       </div>
                       {/* 结果滚动区 */}
                       <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
