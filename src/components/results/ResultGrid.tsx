@@ -45,7 +45,9 @@ export function ResultGrid(props: {
   const defaultW = () =>
     columns.length === 1 && containerW > 0 ? Math.max(DEFAULT_W, Math.floor(containerW * 0.5)) : DEFAULT_W;
   const colWidth = (i: number) => widths[i] ?? defaultW();
+  const stripe = (ri: number) => (ri % 2 === 1 ? "var(--bg-panel)" : "transparent");
   const totalWidth = columns.reduce((s, _c, i) => s + colWidth(i), 0);
+  const fill = Math.max(0, containerW - totalWidth); // 不足整宽时用空白列补满
 
   const startResize = (i: number, e: React.MouseEvent) => {
     e.preventDefault();
@@ -88,9 +90,10 @@ export function ResultGrid(props: {
          style={{ outline: "none" }}>
       {props.pkCol === null &&
         <div style={{ color: "var(--fg-muted)", fontSize: 11, padding: "4px 8px" }}>该结果无主键,双击可查看完整内容,暂不可编辑</div>}
-      <table style={{ borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed", width: totalWidth }}>
+      <table style={{ borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed", width: Math.max(totalWidth, containerW) }}>
         <colgroup>
           {columns.map((c, i) => <col key={`${c}-${i}`} style={{ width: colWidth(i) }} />)}
+          {fill > 0 && <col style={{ width: fill }} />}
         </colgroup>
         <thead>
           <tr>
@@ -105,17 +108,19 @@ export function ResultGrid(props: {
                 />
               </th>
             ))}
+            {fill > 0 && <th style={{ ...thStyle, position: "sticky", borderRight: "none" }} />}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, ri) => {
             const selected = selectedRow === ri;
+            const rowBg = selected ? "var(--selection)" : stripe(ri);
             return (
               <tr key={ri} onClick={() => props.onSelectRow?.(ri)}>
                 {row.map((cellVal, ci) => {
                   const pkValue = pkIndex >= 0 ? row[pkIndex] ?? "" : "";
                   const dirty = props.dirtyKeys.has(`${pkValue}|${columns[ci]}`);
-                  const bg = dirty ? "var(--dirty-bg)" : selected ? "var(--selection)" : "transparent";
+                  const bg = dirty ? "var(--dirty-bg)" : rowBg;
                   return (
                     <td key={ci}
                         onDoubleClick={() => openCell(ri, ci)}
@@ -135,6 +140,7 @@ export function ResultGrid(props: {
                     </td>
                   );
                 })}
+                {fill > 0 && <td style={{ background: rowBg, borderBottom: "1px solid var(--border)" }} />}
               </tr>
             );
           })}
