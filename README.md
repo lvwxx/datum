@@ -136,6 +136,3 @@ src-tauri/                后端(Rust + Tauri)
 docs/superpowers/         设计文档与实现计划
 ```
 
-## 许可
-
-私有自用项目。
