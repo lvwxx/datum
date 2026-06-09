@@ -12,11 +12,13 @@ export function ResultGrid(props: {
   onStage: (e: Omit<CellEdit, "table">) => void;
   onCommit: () => void;
   onRowContext?: (rowIndex: number, x: number, y: number) => void;
+  selectedRow?: number | null;
+  onSelectRow?: (rowIndex: number) => void;
 }) {
   const { columns, rows } = props.result;
   const pkIndex = props.pkCol ? columns.indexOf(props.pkCol) : -1;
   const editable = pkIndex >= 0;
-  const [selectedRow, setSelectedRow] = useState<number | null>(null);
+  const selectedRow = props.selectedRow ?? null;
   const [cell, setCell] = useState<{ r: number; c: number } | null>(null);
   const [draft, setDraft] = useState("");
   const [widths, setWidths] = useState<Record<number, number>>({});
@@ -91,8 +93,8 @@ export function ResultGrid(props: {
           {rows.map((row, ri) => {
             const selected = selectedRow === ri;
             return (
-              <tr key={ri} onClick={() => setSelectedRow(ri)}
-                  onContextMenu={(e) => { e.preventDefault(); setSelectedRow(ri); props.onRowContext?.(ri, e.clientX, e.clientY); }}>
+              <tr key={ri} onClick={() => props.onSelectRow?.(ri)}
+                  onContextMenu={(e) => { e.preventDefault(); props.onSelectRow?.(ri); props.onRowContext?.(ri, e.clientX, e.clientY); }}>
                 {row.map((cellVal, ci) => {
                   const pkValue = pkIndex >= 0 ? row[pkIndex] ?? "" : "";
                   const dirty = props.dirtyKeys.has(`${pkValue}|${columns[ci]}`);

@@ -23,6 +23,7 @@ import { ObjectTree } from "./components/Sidebar/ObjectTree";
 import { SqlEditor } from "./components/editor/SqlEditor";
 import { ResultGrid } from "./components/results/ResultGrid";
 import { TableDetail } from "./components/detail/TableDetail";
+import { RowDetail } from "./components/detail/RowDetail";
 import type { Connection, DbKind } from "./types";
 
 const PAGE_SIZE = 100;
@@ -42,6 +43,7 @@ interface Tab {
   browseTable: string | null; // 非空表示处于分页浏览(仅 PG)
   dirty: Record<string, CellEdit>;
   err: string | null;
+  selectedRow: number | null; // 结果中选中的行(用于右栏行详情)
 }
 
 function HHandle() {
@@ -136,7 +138,7 @@ export default function App() {
     if (kind === "redis") {
       const fresh: Tab = {
         id, connId: activeId, kind, title: t, table: t, sql: "",
-        result: null, detail: null, redisDetail: null, page: 0, browseTable: null, dirty: {}, err: null,
+        result: null, detail: null, redisDetail: null, page: 0, browseTable: null, dirty: {}, err: null, selectedRow: null,
       };
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
@@ -149,7 +151,7 @@ export default function App() {
       const sql = pageSql(t, 0);
       const fresh: Tab = {
         id, connId: activeId, kind, title: t, table: t, sql,
-        result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null,
+        result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null, selectedRow: null,
       };
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
@@ -166,7 +168,7 @@ export default function App() {
     const sql = pageSql(tab.browseTable, p);
     try {
       const result = await pgQuery(tab.connId, sql);
-      patch(tab.id, { page: p, sql, result, err: null });
+      patch(tab.id, { page: p, sql, result, err: null, selectedRow: null });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
 
@@ -177,7 +179,7 @@ export default function App() {
       if (!cmd) { patch(tab.id, { err: "命令为空" }); return; }
       try {
         const reply = await redisExec(tab.connId, cmd);
-        patch(tab.id, { result: { columns: ["结果"], rows: reply ? reply.split("\n").map((l) => [l]) : [], affected: null }, err: null });
+        patch(tab.id, { result: { columns: ["结果"], rows: reply ? reply.split("\n").map((l) => [l]) : [], affected: null }, err: null, selectedRow: null });
       } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
       return;
     }
@@ -185,7 +187,7 @@ export default function App() {
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
       const result = await pgQuery(tab.connId, q);
-      patch(tab.id, { result, err: null, browseTable: null, page: 0 });
+      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
 
@@ -376,6 +378,8 @@ export default function App() {
                         {!tab.err && tab.result && tab.result.rows.length > 0 &&
                           <ResultGrid result={tab.result} pkCol={pkCol} dirtyKeys={dirtyKeys}
                             onStage={stageEdit} onCommit={commit}
+                            selectedRow={tab.selectedRow}
+                            onSelectRow={(i) => patch(tab.id, { selectedRow: i })}
                             onRowContext={(rowIndex, x, y) => setRowMenu({ rowIndex, x, y })} />}
                       </div>
                       {/* 分页(右下) */}
@@ -404,7 +408,14 @@ export default function App() {
         <Panel ref={rightRef} collapsible collapsedSize={0} defaultSize={24} minSize={12}
           onCollapse={() => setRightOpen(false)} onExpand={() => setRightOpen(true)}>
           <aside style={{ height: "100%", overflow: "auto", background: "var(--bg-panel)" }}>
-            {tab?.kind === "redis" && tab.redisDetail ? (
+            {tab?.result && tab.selectedRow != null && tab.result.rows[tab.selectedRow] ? (
+              <RowDetail
+                columns={tab.result.columns}
+                values={tab.result.rows[tab.selectedRow]}
+                types={tab.detail ? Object.fromEntries(tab.detail.columns.map((c) => [c.name, c.dataType])) : {}}
+                onBack={() => patch(tab.id, { selectedRow: null })}
+              />
+            ) : tab?.kind === "redis" && tab.redisDetail ? (
               <div style={{ padding: 10, fontSize: 12, lineHeight: 2 }}>
                 <div style={{ color: "var(--fg-muted)", fontSize: 10, textTransform: "uppercase", marginBottom: 6 }}>KEY 详情</div>
                 <div style={{ wordBreak: "break-all" }}><span style={{ color: "var(--fg-muted)" }}>键</span> <b>{tab.redisDetail.key}</b></div>
