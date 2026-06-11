@@ -247,6 +247,38 @@ export default function App() {
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
 
+  // 刷新左侧表/KEY 列表
+  const refreshTables = async () => {
+    if (!activeId) return;
+    const conn = connections.find((c) => c.id === activeId);
+    try {
+      if (conn?.kind === "redis") setTables(await redisScan(activeId, "*"));
+      else setTables(await relApi(conn?.kind ?? "pg").list(activeId));
+    } catch { /* 忽略 */ }
+  };
+
+  // 刷新当前 tab 的结构与结果
+  const refreshTab = async () => {
+    if (!tab || !tab.table) return;
+    if (tab.kind === "redis") {
+      try {
+        const kv = await redisGetKey(tab.connId, tab.table);
+        const redisDetail = await redisKeyDetail(tab.connId, tab.table);
+        patch(tab.id, { result: { columns: kv.columns, rows: kv.rows, affected: null }, redisDetail, err: null });
+      } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
+      return;
+    }
+    const r = relApi(tab.kind);
+    try {
+      const detail = await r.detail(tab.connId, tab.table);
+      const sql = tab.browseTable ? pageSql(tab.browseTable, tab.page, tab.kind) : tab.sql;
+      const result = await r.query(tab.connId, sql);
+      patch(tab.id, { detail, result, err: null, selectedRow: null });
+    } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
+  };
+
+  const onRefresh = () => { refreshTables(); refreshTab(); toast.success("已刷新"); };
+
   const closeTab = (id: string) => {
     const idx = tabs.findIndex((t) => t.id === id);
     const next = tabs.filter((t) => t.id !== id);
@@ -269,6 +301,18 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [activeTabId, tabs]);
+
+  // ⌘R:刷新表/KEY 列表与当前 tab(拦截 webview 默认刷新)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        onRefresh();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeId, tab, connections]);
 
   const openNew = () => { setEditConn(null); setFormOpen(true); };
   const openEdit = (c: Connection) => { setEditConn(c); setFormOpen(true); };
@@ -406,7 +450,9 @@ export default function App() {
                       <div style={{ padding: "4px 10px", fontSize: 11, color: "var(--fg-muted)", borderBottom: "1px solid var(--border)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                         <span>
                           {tab.err ? <span style={{ color: "var(--error)" }}>查询出错</span>
-                            : tab.result ? `${tab.result.rows.length} 行 · ${tab.result.columns.length} 列${tab.result.affected != null ? ` · 影响 ${tab.result.affected}` : ""}`
+                            : tab.result ? (tab.result.columns.length === 0
+                                ? `执行成功${tab.result.affected ? ` · 影响 ${tab.result.affected} 行` : ""}`
+                                : `${tab.result.rows.length} 行 · ${tab.result.columns.length} 列${tab.result.affected ? ` · 影响 ${tab.result.affected}` : ""}`)
                             : "就绪"}
                         </span>
                         <span style={{ flexShrink: 0, display: "flex", gap: 6 }}>
@@ -425,8 +471,11 @@ export default function App() {
                       {/* 结果滚动区 */}
                       <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
                         {tab.err && <div style={{ color: "var(--error)", padding: 8, fontSize: 12, whiteSpace: "pre-wrap" }}>{tab.err}</div>}
-                        {!tab.err && tab.result && tab.result.rows.length === 0 &&
-                          <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 12 }}>查询成功,但没有行(0 行)</div>}
+                        {!tab.err && tab.result && tab.result.rows.length === 0 && (
+                          tab.result.columns.length === 0
+                            ? <div style={{ padding: 8, color: "var(--accent)", fontSize: 12 }}>✓ 执行成功{tab.result.affected ? ` · 影响 ${tab.result.affected} 行` : ""}</div>
+                            : <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 12 }}>查询成功,但没有行(0 行)</div>
+                        )}
                         {!tab.err && tab.result && tab.result.rows.length > 0 &&
                           <ResultGrid result={tab.result} pkCol={pkCol} dirtyKeys={dirtyKeys}
                             onStage={stageEdit} onCommit={commit}
