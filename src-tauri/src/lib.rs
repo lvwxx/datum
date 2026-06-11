@@ -3,6 +3,7 @@ mod core;
 mod commands;
 mod pg;
 mod rds;
+mod my;
 
 use commands::AppState;
 use std::sync::Mutex;
@@ -21,6 +22,7 @@ pub fn run() {
                 lock: Mutex::new(()),
                 pg_pool: crate::pg::client::PgPool::default(),
                 redis_pool: crate::rds::client::RedisPool::default(),
+                my_pool: crate::my::client::MyPool::default(),
             });
             Ok(())
         })
@@ -38,6 +40,11 @@ pub fn run() {
             rds::commands::redis_get_key,
             rds::commands::redis_key_detail,
             rds::commands::redis_exec,
+            my::commands::my_connect,
+            my::commands::my_list_objects,
+            my::commands::my_query,
+            my::commands::my_table_detail,
+            my::commands::my_commit_edits,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

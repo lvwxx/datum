@@ -19,8 +19,9 @@ export function ConnectionForm(props: {
   const onKind = (kind: DbKind) =>
     setC({
       ...c, kind,
-      port: kind === "redis" ? 6379 : 5432,
-      database: kind === "redis" ? "0" : "postgres",
+      port: kind === "redis" ? 6379 : kind === "mysql" ? 3306 : 5432,
+      user: kind === "mysql" ? "root" : kind === "redis" ? c.user : "postgres",
+      database: kind === "redis" ? "0" : kind === "mysql" ? "" : "postgres",
     });
 
   const field = { display: "grid", gap: 5 } as const;
@@ -48,6 +49,7 @@ export function ConnectionForm(props: {
         <span style={caption}>类型</span>
         <select value={c.kind} onChange={(e) => onKind(e.target.value as DbKind)}>
           <option value="pg">PostgreSQL</option>
+          <option value="mysql">MySQL</option>
           <option value="redis">Redis</option>
         </select>
       </label>

@@ -4,6 +4,7 @@ use crate::core::repository::ConnectionRepo;
 use crate::error::{AppError, AppResult, ErrorKind};
 use crate::pg::client::PgPool;
 use crate::rds::client::RedisPool;
+use crate::my::client::MyPool;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -13,6 +14,7 @@ pub struct AppState {
     pub lock: Mutex<()>, // 串行化配置文件写入
     pub pg_pool: PgPool,
     pub redis_pool: RedisPool,
+    pub my_pool: MyPool,
 }
 
 impl AppState {

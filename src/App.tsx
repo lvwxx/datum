@@ -9,6 +9,7 @@ import { pgConnect, pgListObjects, pgQuery, pgTableDetail, pgCommitEdits } from 
 import type { QueryResult, TableDetail as Detail, CellEdit } from "./api/pg";
 import { redisConnect, redisScan, redisGetKey, redisKeyDetail, redisExec } from "./api/redis";
 import type { RedisKeyDetail } from "./api/redis";
+import { myConnect, myListObjects, myQuery, myTableDetail, myCommitEdits } from "./api/mysql";
 import { Modal } from "./components/Modal";
 import { ContextMenu } from "./components/ContextMenu";
 import { SqlView } from "./components/SqlView";
@@ -53,7 +54,16 @@ function VHandle() {
   return <PanelResizeHandle style={{ height: 5, background: "var(--border)", cursor: "row-resize" }} />;
 }
 
-const pageSql = (t: string, p: number) => `SELECT * FROM "${t}" LIMIT ${PAGE_SIZE} OFFSET ${p * PAGE_SIZE}`;
+// 关系型(pg / mysql)统一分发:命令集 + 标识符引号
+const relApi = (kind: DbKind) =>
+  kind === "mysql"
+    ? { connect: myConnect, list: myListObjects, query: myQuery, detail: myTableDetail, commit: myCommitEdits,
+        q: (t: string) => `\`${t.replace(/`/g, "``")}\``, dialect: "mysql" as const }
+    : { connect: pgConnect, list: pgListObjects, query: pgQuery, detail: pgTableDetail, commit: pgCommitEdits,
+        q: (t: string) => `"${t.replace(/"/g, '""')}"`, dialect: "pg" as const };
+
+const pageSql = (t: string, p: number, kind: DbKind) =>
+  `SELECT * FROM ${relApi(kind).q(t)} LIMIT ${PAGE_SIZE} OFFSET ${p * PAGE_SIZE}`;
 
 export default function App() {
   const { name, toggle } = useTheme();
@@ -127,7 +137,7 @@ export default function App() {
     const conn = connections.find((c) => c.id === id);
     try {
       if (conn?.kind === "redis") { await redisConnect(id); setTables(await redisScan(id, "*")); }
-      else { await pgConnect(id); setTables(await pgListObjects(id)); }
+      else { const r = relApi(conn?.kind ?? "pg"); await r.connect(id); setTables(await r.list(id)); }
     } catch { setTables([]); }
   };
 
@@ -163,7 +173,8 @@ export default function App() {
         patch(id, { result: { columns: kv.columns, rows: kv.rows, affected: null }, redisDetail });
       } catch (e) { patch(id, { err: JSON.stringify(e) }); }
     } else {
-      const sql = pageSql(t, 0);
+      const r = relApi(kind);
+      const sql = pageSql(t, 0, kind);
       const fresh: Tab = {
         id, connId: activeId, kind, title: t, table: t, sql,
         result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null, selectedRow: null,
@@ -171,8 +182,8 @@ export default function App() {
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
       try {
-        const result = await pgQuery(activeId, sql);
-        const detail = await pgTableDetail(activeId, t);
+        const result = await r.query(activeId, sql);
+        const detail = await r.detail(activeId, t);
         patch(id, { result, detail });
       } catch (e) { patch(id, { err: JSON.stringify(e) }); }
     }
@@ -180,9 +191,9 @@ export default function App() {
 
   const gotoPage = async (p: number) => {
     if (!tab || tab.browseTable === null || p < 0) return;
-    const sql = pageSql(tab.browseTable, p);
+    const sql = pageSql(tab.browseTable, p, tab.kind);
     try {
-      const result = await pgQuery(tab.connId, sql);
+      const result = await relApi(tab.kind).query(tab.connId, sql);
       patch(tab.id, { page: p, sql, result, err: null, selectedRow: null });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
@@ -201,18 +212,18 @@ export default function App() {
     const q = sqlToRun();
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
-      const result = await pgQuery(tab.connId, q);
+      const result = await relApi(tab.kind).query(tab.connId, q);
       patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
 
-  // EXPLAIN 当前/选中的 SQL(仅 PG,纯 EXPLAIN 不执行查询)
+  // EXPLAIN 当前/选中的 SQL(PG / MySQL;纯 EXPLAIN 不执行查询)
   const explain = async () => {
     if (!tab || tab.kind === "redis") return;
     const q = sqlToRun();
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
-      const result = await pgQuery(tab.connId, `EXPLAIN ${q}`);
+      const result = await relApi(tab.kind).query(tab.connId, `EXPLAIN ${q}`);
       patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
@@ -228,9 +239,10 @@ export default function App() {
     const edits = Object.values(tab.dirty);
     if (edits.length === 0) return;
     try {
-      await pgCommitEdits(tab.connId, edits.map((e) => ({ ...e, table: tab.table! })));
-      const sql = tab.browseTable ? pageSql(tab.browseTable, tab.page) : tab.sql;
-      const result = await pgQuery(tab.connId, sql);
+      const r = relApi(tab.kind);
+      await r.commit(tab.connId, edits.map((e) => ({ ...e, table: tab.table! })));
+      const sql = tab.browseTable ? pageSql(tab.browseTable, tab.page, tab.kind) : tab.sql;
+      const result = await r.query(tab.connId, sql);
       patch(tab.id, { dirty: {}, result, sql, err: null });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
@@ -282,15 +294,21 @@ export default function App() {
   // 查看建表语句:取该表详情,合成 DDL,弹出锚定在表名旁的浮层
   const showDdl = async (table: string, x: number, y: number) => {
     if (!activeId) return;
+    const kind = connections.find((c) => c.id === activeId)?.kind ?? "pg";
     try {
-      const detail = await pgTableDetail(activeId, table);
-      setDdl({ table, sql: buildCreateTable(table, detail), x, y });
+      if (kind === "mysql") {
+        const r = await myQuery(activeId, `SHOW CREATE TABLE \`${table.replace(/`/g, "``")}\``);
+        setDdl({ table, sql: r.rows[0]?.[1] ?? "", x, y });
+      } else {
+        const detail = await pgTableDetail(activeId, table);
+        setDdl({ table, sql: buildCreateTable(table, detail), x, y });
+      }
     } catch { /* 忽略 */ }
   };
 
   // 复制当前表的 INSERT 模板
   const copyInsert = () => {
-    if (tab?.detail && tab.table) copyWithToast(buildInsert(tab.table, tab.detail));
+    if (tab?.detail && tab.table) copyWithToast(buildInsert(tab.table, tab.detail, relApi(tab.kind).dialect));
   };
 
   // 复制结果某一行的 INSERT(真实值)
@@ -298,7 +316,7 @@ export default function App() {
     if (!tab?.result) return;
     const row = tab.result.rows[rowIndex];
     if (!row) return;
-    copyWithToast(buildInsertRow(tab.table ?? "table", tab.result.columns, row));
+    copyWithToast(buildInsertRow(tab.table ?? "table", tab.result.columns, row, relApi(tab.kind).dialect));
   };
 
   return (

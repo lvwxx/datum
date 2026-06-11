@@ -1,4 +1,4 @@
-export type DbKind = "pg" | "redis";
+export type DbKind = "pg" | "redis" | "mysql";
 export type Env = "local" | "staging" | "prod";
 
 export interface Connection {

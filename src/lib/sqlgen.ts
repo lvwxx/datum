@@ -1,10 +1,22 @@
 import type { TableDetail } from "../api/pg";
 
-const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
+export type Dialect = "pg" | "mysql";
+
+/** 标识符引号:pg 用双引号,mysql 用反引号。 */
+const ident = (s: string, d: Dialect = "pg") =>
+  d === "mysql" ? `\`${s.replace(/`/g, "``")}\`` : `"${s.replace(/"/g, '""')}"`;
+
+/** 字符串字面量:mysql 还需转义反斜杠(默认开启反斜杠转义)。 */
+const lit = (v: string, d: Dialect = "pg") => {
+  const e = d === "mysql" ? v.replace(/\\/g, "\\\\").replace(/'/g, "''") : v.replace(/'/g, "''");
+  return `'${e}'`;
+};
+
 const splitCols = (cols: string) => cols.split(",").map((c) => c.trim()).filter(Boolean);
 
-/** 由表详情合成 CREATE TABLE(含主键与索引)。非逐字还原,用于查看/复制。 */
+/** 由表详情合成 CREATE TABLE(仅 PG;MySQL 用 SHOW CREATE TABLE)。 */
 export function buildCreateTable(table: string, detail: TableDetail): string {
+  const q = (s: string) => ident(s, "pg");
   const lines = detail.columns.map((c) => {
     let line = `  ${q(c.name)} ${c.dataType}`;
     if (c.notNull) line += " NOT NULL";
@@ -28,15 +40,15 @@ export function buildCreateTable(table: string, detail: TableDetail): string {
 }
 
 /** 由表详情合成 INSERT 模板,值用 <列名> 占位,便于替换。 */
-export function buildInsert(table: string, detail: TableDetail): string {
-  const cols = detail.columns.map((c) => q(c.name)).join(", ");
+export function buildInsert(table: string, detail: TableDetail, d: Dialect = "pg"): string {
+  const cols = detail.columns.map((c) => ident(c.name, d)).join(", ");
   const vals = detail.columns.map((c) => `<${c.name}>`).join(", ");
-  return `INSERT INTO ${q(table)} (${cols})\nVALUES (${vals});`;
+  return `INSERT INTO ${ident(table, d)} (${cols})\nVALUES (${vals});`;
 }
 
-/** 由结果某一行的真实值合成 INSERT(NULL 原样,其余单引号转义)。 */
-export function buildInsertRow(table: string, columns: string[], values: (string | null)[]): string {
-  const cols = columns.map(q).join(", ");
-  const vals = values.map((v) => (v == null ? "NULL" : `'${v.replace(/'/g, "''")}'`)).join(", ");
-  return `INSERT INTO ${q(table)} (${cols}) VALUES (${vals});`;
+/** 由结果某一行的真实值合成 INSERT(NULL 原样,其余按方言转义)。 */
+export function buildInsertRow(table: string, columns: string[], values: (string | null)[], d: Dialect = "pg"): string {
+  const cols = columns.map((c) => ident(c, d)).join(", ");
+  const vals = values.map((v) => (v == null ? "NULL" : lit(v, d))).join(", ");
+  return `INSERT INTO ${ident(table, d)} (${cols}) VALUES (${vals});`;
 }
