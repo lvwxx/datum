@@ -26,6 +26,11 @@ export function splitStatements(doc: string): { from: number; to: number }[] {
   return ranges;
 }
 
+/** 判断语句是否为"查询"(产生结果集),据此区分 SELECT 与 DDL/DML。 */
+export function isQuery(sql: string): boolean {
+  return /^\s*(?:with|select|show|explain|desc|describe|values|table|pragma)\b/i.test(sql);
+}
+
 /** 返回光标所在的那条语句(已 trim)。单条时即整段。 */
 export function currentStatement(doc: string, caret: number): string {
   const ranges = splitStatements(doc);

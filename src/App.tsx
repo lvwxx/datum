@@ -15,7 +15,7 @@ import { ContextMenu } from "./components/ContextMenu";
 import { SqlView } from "./components/SqlView";
 import { Toaster, toast } from "./components/Toast";
 import { buildCreateTable, buildInsert, buildInsertRow } from "./lib/sqlgen";
-import { currentStatement } from "./lib/sqlstmt";
+import { currentStatement, isQuery } from "./lib/sqlstmt";
 import { copyToClipboard } from "./lib/clipboard";
 import type { EditorView } from "@codemirror/view";
 import { ConnectionList } from "./components/Sidebar/ConnectionList";
@@ -45,6 +45,7 @@ interface Tab {
   dirty: Record<string, CellEdit>;
   err: string | null;
   selectedRow: number | null; // 结果中选中的行(用于右栏行详情)
+  resultIsQuery: boolean;     // 当前结果来自查询(SELECT)还是非查询语句(DDL/DML)
 }
 
 function HHandle() {
@@ -163,7 +164,7 @@ export default function App() {
     if (kind === "redis") {
       const fresh: Tab = {
         id, connId: activeId, kind, title: t, table: t, sql: "",
-        result: null, detail: null, redisDetail: null, page: 0, browseTable: null, dirty: {}, err: null, selectedRow: null,
+        result: null, detail: null, redisDetail: null, page: 0, browseTable: null, dirty: {}, err: null, selectedRow: null, resultIsQuery: true,
       };
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
@@ -177,7 +178,7 @@ export default function App() {
       const sql = pageSql(t, 0, kind);
       const fresh: Tab = {
         id, connId: activeId, kind, title: t, table: t, sql,
-        result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null, selectedRow: null,
+        result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null, selectedRow: null, resultIsQuery: true,
       };
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
@@ -194,7 +195,7 @@ export default function App() {
     const sql = pageSql(tab.browseTable, p, tab.kind);
     try {
       const result = await relApi(tab.kind).query(tab.connId, sql);
-      patch(tab.id, { page: p, sql, result, err: null, selectedRow: null });
+      patch(tab.id, { page: p, sql, result, err: null, selectedRow: null, resultIsQuery: true });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
 
@@ -213,7 +214,7 @@ export default function App() {
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
       const result = await relApi(tab.kind).query(tab.connId, q);
-      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null });
+      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null, resultIsQuery: isQuery(q) });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
 
@@ -224,7 +225,7 @@ export default function App() {
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
       const result = await relApi(tab.kind).query(tab.connId, `EXPLAIN ${q}`);
-      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null });
+      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null, resultIsQuery: true });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
 
@@ -243,7 +244,7 @@ export default function App() {
       await r.commit(tab.connId, edits.map((e) => ({ ...e, table: tab.table! })));
       const sql = tab.browseTable ? pageSql(tab.browseTable, tab.page, tab.kind) : tab.sql;
       const result = await r.query(tab.connId, sql);
-      patch(tab.id, { dirty: {}, result, sql, err: null });
+      patch(tab.id, { dirty: {}, result, sql, err: null, resultIsQuery: true });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
 
@@ -264,7 +265,7 @@ export default function App() {
       try {
         const kv = await redisGetKey(tab.connId, tab.table);
         const redisDetail = await redisKeyDetail(tab.connId, tab.table);
-        patch(tab.id, { result: { columns: kv.columns, rows: kv.rows, affected: null }, redisDetail, err: null });
+        patch(tab.id, { result: { columns: kv.columns, rows: kv.rows, affected: null }, redisDetail, err: null, resultIsQuery: true });
       } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
       return;
     }
@@ -273,7 +274,7 @@ export default function App() {
       const detail = await r.detail(tab.connId, tab.table);
       const sql = tab.browseTable ? pageSql(tab.browseTable, tab.page, tab.kind) : tab.sql;
       const result = await r.query(tab.connId, sql);
-      patch(tab.id, { detail, result, err: null, selectedRow: null });
+      patch(tab.id, { detail, result, err: null, selectedRow: null, resultIsQuery: true });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
 
@@ -450,7 +451,7 @@ export default function App() {
                       <div style={{ padding: "4px 10px", fontSize: 11, color: "var(--fg-muted)", borderBottom: "1px solid var(--border)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                         <span>
                           {tab.err ? <span style={{ color: "var(--error)" }}>查询出错</span>
-                            : tab.result ? (tab.result.columns.length === 0
+                            : tab.result ? (!tab.resultIsQuery
                                 ? `执行成功${tab.result.affected ? ` · 影响 ${tab.result.affected} 行` : ""}`
                                 : `${tab.result.rows.length} 行 · ${tab.result.columns.length} 列${tab.result.affected ? ` · 影响 ${tab.result.affected}` : ""}`)
                             : "就绪"}
@@ -472,7 +473,7 @@ export default function App() {
                       <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
                         {tab.err && <div style={{ color: "var(--error)", padding: 8, fontSize: 12, whiteSpace: "pre-wrap" }}>{tab.err}</div>}
                         {!tab.err && tab.result && tab.result.rows.length === 0 && (
-                          tab.result.columns.length === 0
+                          !tab.resultIsQuery
                             ? <div style={{ padding: 8, color: "var(--accent)", fontSize: 12 }}>✓ 执行成功{tab.result.affected ? ` · 影响 ${tab.result.affected} 行` : ""}</div>
                             : <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 12 }}>查询成功,但没有行(0 行)</div>
                         )}
