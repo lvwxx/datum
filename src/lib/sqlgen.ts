@@ -1,6 +1,6 @@
 import type { TableDetail } from "../api/pg";
 
-export type Dialect = "pg" | "mysql";
+export type Dialect = "pg" | "mysql" | "sqlite";
 
 /** 标识符引号:pg 用双引号,mysql 用反引号。 */
 const ident = (s: string, d: Dialect = "pg") =>

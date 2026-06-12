@@ -57,7 +57,7 @@ mod tests {
         Connection {
             id: "c1".into(), name: "n".into(), kind: DbKind::Pg, env: Env::Local,
             host: "127.0.0.1".into(), port: 5432, user: "postgres".into(),
-            database: "portai-babbage-dev".into(), plaintext_password: None,
+            database: "portai-babbage-dev".into(), plaintext_password: None, file_path: None,
         }
     }
 

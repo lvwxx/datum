@@ -7,6 +7,7 @@ import { useStore } from "./state/store";
 import { listConnections, saveConnection, deleteConnection } from "./api/connections";
 import { pgConnect, pgListObjects, pgQuery, pgTableDetail, pgCommitEdits } from "./api/pg";
 import type { QueryResult, TableDetail as Detail, CellEdit } from "./api/pg";
+import { sqliteConnect, sqliteListObjects, sqliteQuery, sqliteTableDetail, sqliteCommitEdits } from "./api/sqlite";
 import { redisConnect, redisScan, redisGetKey, redisKeyDetail, redisExec } from "./api/redis";
 import type { RedisKeyDetail } from "./api/redis";
 import { myConnect, myListObjects, myQuery, myTableDetail, myCommitEdits } from "./api/mysql";
@@ -33,7 +34,7 @@ const PAGE_SIZE = 100;
 interface Tab {
   id: string;
   connId: string;
-  kind: DbKind;               // pg | redis
+  kind: DbKind;               // pg | redis | sqlite
   title: string;
   table: string | null;       // PG:编辑目标表 / Redis:key 名
   sql: string;                // PG:SQL / Redis:命令
@@ -55,11 +56,14 @@ function VHandle() {
   return <PanelResizeHandle style={{ height: 5, background: "var(--border)", cursor: "row-resize" }} />;
 }
 
-// 关系型(pg / mysql)统一分发:命令集 + 标识符引号
+// 关系型(pg / mysql / sqlite)统一分发:命令集 + 标识符引号
 const relApi = (kind: DbKind) =>
   kind === "mysql"
     ? { connect: myConnect, list: myListObjects, query: myQuery, detail: myTableDetail, commit: myCommitEdits,
         q: (t: string) => `\`${t.replace(/`/g, "``")}\``, dialect: "mysql" as const }
+    : kind === "sqlite"
+    ? { connect: sqliteConnect, list: sqliteListObjects, query: sqliteQuery, detail: sqliteTableDetail, commit: sqliteCommitEdits,
+        q: (t: string) => `"${t.replace(/"/g, '""')}"`, dialect: "sqlite" as const }
     : { connect: pgConnect, list: pgListObjects, query: pgQuery, detail: pgTableDetail, commit: pgCommitEdits,
         q: (t: string) => `"${t.replace(/"/g, '""')}"`, dialect: "pg" as const };
 
@@ -97,6 +101,7 @@ export default function App() {
   const [tableMenu, setTableMenu] = useState<{ table: string; x: number; y: number } | null>(null);
   const [colMenu, setColMenu] = useState<{ x: number; y: number } | null>(null);
   const [ddl, setDdl] = useState<{ table: string; sql: string; x: number; y: number } | null>(null);
+  const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   const copyWithToast = (text: string) => { copyToClipboard(text); toast.success("已复制"); };
 
@@ -218,7 +223,7 @@ export default function App() {
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
 
-  // EXPLAIN 当前/选中的 SQL(PG / MySQL;纯 EXPLAIN 不执行查询)
+  // EXPLAIN 当前/选中的 SQL(PG / MySQL / SQLite;纯 EXPLAIN 不执行查询)
   const explain = async () => {
     if (!tab || tab.kind === "redis") return;
     const q = sqlToRun();
@@ -290,7 +295,14 @@ export default function App() {
     }
   };
 
+  // 关闭除指定页外的所有标签页,并将其设为当前页
+  const closeOtherTabs = (id: string) => {
+    setTabs((ts) => ts.filter((t) => t.id === id));
+    setActiveTabId(id);
+  };
+
   // ⌘W:有打开的 tab 则关闭当前 tab;否则退出程序
+  // (⌘R 重载在 main.tsx 全局注册,确保 App 崩溃卸载后仍可用于从白屏恢复)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
@@ -345,7 +357,7 @@ export default function App() {
         const r = await myQuery(activeId, `SHOW CREATE TABLE \`${table.replace(/`/g, "``")}\``);
         setDdl({ table, sql: r.rows[0]?.[1] ?? "", x, y });
       } else {
-        const detail = await pgTableDetail(activeId, table);
+        const detail = await relApi(kind).detail(activeId, table);
         setDdl({ table, sql: buildCreateTable(table, detail), x, y });
       }
     } catch { /* 忽略 */ }
@@ -384,7 +396,8 @@ export default function App() {
                 onContext={(c, x, y) => setMenu({ c, x, y })}
                 renderUnder={(c) =>
                   c.id === activeId && treeOpen
-                    ? <ObjectTree tables={tables} active={tab?.table ?? null} onSelect={onSelectTable}
+                    ? <ObjectTree tables={tables} active={tab?.table ?? null} contextTable={tableMenu?.table ?? null}
+                        onSelect={onSelectTable}
                         onContext={(table, x, y) => setTableMenu({ table, x, y })} />
                     : null}
               />
@@ -407,7 +420,7 @@ export default function App() {
             <div style={{ padding: "5px 10px", fontSize: 12, borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", color: headConn ? "var(--fg)" : "var(--fg-muted)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {headConn
-                  ? <>🔌 {headConn.name} · 库 <b>{headConn.database}</b>{tab?.table ? ` · ${tab.kind === "redis" ? "key" : "表"} ${tab.table}` : ""}</>
+                  ? <>🔌 {headConn.name} · 库 <b>{headConn.kind === "sqlite" ? (headConn.filePath?.split(/[/\\]/).pop() || headConn.filePath || "—") : headConn.database}</b>{tab?.table ? ` · ${tab.kind === "redis" ? "key" : "表"} ${tab.table}` : ""}</>
                   : "未连接 —— 点左侧连接"}
               </span>
               <button onClick={toggleRight} title={rightOpen ? "隐藏详情栏" : "显示详情栏"}
@@ -421,6 +434,7 @@ export default function App() {
               {tabs.map((t) => (
                 <div key={t.id}
                      onClick={() => setActiveTabId(t.id)}
+                     onContextMenu={(e) => { e.preventDefault(); setTabMenu({ id: t.id, x: e.clientX, y: e.clientY }); }}
                      title={t.title}
                      style={{
                        display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
@@ -560,8 +574,19 @@ export default function App() {
           items={
             connections.find((c) => c.id === activeId)?.kind === "redis"
               ? [{ label: "复制 key 名", onClick: () => copyWithToast(tableMenu.table) }]
-              : [{ label: "查看建表语句", onClick: () => showDdl(tableMenu.table, tableMenu.x, tableMenu.y) }]
+              : [
+                  { label: "复制表名", onClick: () => copyWithToast(tableMenu.table) },
+                  { label: "查看建表语句", onClick: () => showDdl(tableMenu.table, tableMenu.x, tableMenu.y) },
+                ]
           } />
+      )}
+
+      {/* 右键标签页 */}
+      {tabMenu && (
+        <ContextMenu x={tabMenu.x} y={tabMenu.y} onClose={() => setTabMenu(null)} items={[
+          { label: "关闭标签页", onClick: () => closeTab(tabMenu.id) },
+          { label: "关闭其他标签页", onClick: () => closeOtherTabs(tabMenu.id) },
+        ]} />
       )}
 
       {/* 右键结构字段 */}

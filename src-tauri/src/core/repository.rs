@@ -38,7 +38,7 @@ mod tests {
     fn sample() -> Connection {
         Connection { id: "c1".into(), name: "local-pg".into(), kind: DbKind::Pg, env: Env::Local,
             host: "127.0.0.1".into(), port: 5432, user: "postgres".into(),
-            database: "postgres".into(), plaintext_password: Some("pw".into()) }
+            database: "postgres".into(), plaintext_password: Some("pw".into()), file_path: None }
     }
 
     #[test]

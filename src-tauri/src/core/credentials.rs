@@ -93,7 +93,7 @@ mod tests {
     fn conn(env: Env) -> Connection {
         Connection { id: "c1".into(), name: "n".into(), kind: DbKind::Pg, env,
             host: "h".into(), port: 5432, user: "u".into(), database: "d".into(),
-            plaintext_password: None }
+            plaintext_password: None, file_path: None }
     }
 
     #[test]

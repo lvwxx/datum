@@ -5,6 +5,7 @@ use crate::error::{AppError, AppResult, ErrorKind};
 use crate::pg::client::PgPool;
 use crate::rds::client::RedisPool;
 use crate::my::client::MyPool;
+use crate::sqlite::client::SqlitePool;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -15,6 +16,7 @@ pub struct AppState {
     pub pg_pool: PgPool,
     pub redis_pool: RedisPool,
     pub my_pool: MyPool,
+    pub sqlite_pool: SqlitePool,
 }
 
 impl AppState {
@@ -88,7 +90,7 @@ mod tests {
         Connection {
             id: id.into(), name: "n".into(), kind: DbKind::Pg, env,
             host: "h".into(), port: 5432, user: "u".into(), database: "d".into(),
-            plaintext_password: pw.map(|s| s.into()),
+            plaintext_password: pw.map(|s| s.into()), file_path: None,
         }
     }
 

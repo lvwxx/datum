@@ -33,7 +33,7 @@ export function ConnectionList(props: {
             <span style={{ flexShrink: 0, color: "var(--fg-muted)", width: 10, fontSize: 10 }}>
               {c.id === props.expandedId ? "▾" : "▸"}
             </span>
-            <span style={{ flexShrink: 0 }}>{c.kind === "redis" ? "🔑" : c.kind === "mysql" ? "🐬" : "🐘"}</span>
+            <span style={{ flexShrink: 0 }}>{c.kind === "redis" ? "🔑" : c.kind === "mysql" ? "🐬" : c.kind === "sqlite" ? "🗃️" : "🐘"}</span>
             <MiddleEllipsis text={c.name} />
             <span style={{
               flexShrink: 0, background: envVar[c.env], color: "#fff", fontSize: 9,

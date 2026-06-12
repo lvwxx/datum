@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub enum DbKind { Pg, Redis }
+pub enum DbKind { Pg, Redis, Sqlite }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -29,6 +29,9 @@ pub struct Connection {
     /// 仅当 env == Local 时这里才有明文密码;否则为 None(密码在钥匙串)。
     #[serde(default)]
     pub plaintext_password: Option<String>,
+    /// 仅 SQLite 使用:数据库文件的绝对路径。其他类型为 None。
+    #[serde(default)]
+    pub file_path: Option<String>,
 }
 
 impl Connection {
@@ -51,7 +54,7 @@ mod tests {
         let c = Connection {
             id: "c1".into(), name: "prod-pg".into(), kind: DbKind::Pg, env: Env::Prod,
             host: "db.example.com".into(), port: 5432, user: "app".into(),
-            database: "appdb".into(), plaintext_password: None,
+            database: "appdb".into(), plaintext_password: None, file_path: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Connection = serde_json::from_str(&json).unwrap();
