@@ -19,6 +19,8 @@ export function ContextMenu(props: { x: number; y: number; onClose: () => void; 
         {props.items.map((it, i) => (
           <div key={i}
                onClick={() => { it.onClick(); props.onClose(); }}
+               onMouseEnter={(e) => { e.currentTarget.style.background = "var(--selection)"; }}
+               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                style={{ padding: "6px 10px", cursor: "pointer", borderRadius: 5, whiteSpace: "nowrap", color: it.danger ? "var(--error)" : "var(--fg)" }}>
             {it.label}
           </div>
