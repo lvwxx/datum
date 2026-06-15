@@ -13,15 +13,15 @@ export function ContextMenu(props: { x: number; y: number; onClose: () => void; 
            style={{ position: "fixed", inset: 0, zIndex: 200 }} />
       <div style={{
         position: "fixed", left: props.x, top: props.y, zIndex: 201, minWidth: 150,
-        background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8,
-        boxShadow: "0 6px 20px rgba(0,0,0,0.2)", padding: 4, fontSize: 13,
+        background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 12,
+        boxShadow: "0 6px 20px rgba(0,0,0,0.2)", padding: 5, fontSize: 13,
       }}>
         {props.items.map((it, i) => (
           <div key={i}
                onClick={() => { it.onClick(); props.onClose(); }}
                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--selection)"; }}
                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-               style={{ padding: "6px 10px", cursor: "pointer", borderRadius: 5, whiteSpace: "nowrap", color: it.danger ? "var(--error)" : "var(--fg)" }}>
+               style={{ padding: "6px 10px", cursor: "pointer", borderRadius: 8, whiteSpace: "nowrap", color: it.danger ? "var(--error)" : "var(--fg)" }}>
             {it.label}
           </div>
         ))}
