@@ -15,6 +15,8 @@ export function ResultGrid(props: {
   onCopyInsertRow?: (rowIndex: number) => void;
   selectedRow?: number | null;
   onSelectRow?: (rowIndex: number) => void;
+  sort?: { col: string; dir: "asc" | "desc" } | null;
+  onSortColumn?: (col: string) => void; // 仅浏览表时提供:点击表头按该字段重查排序
 }) {
   const { columns, rows } = props.result;
   const pkIndex = props.pkCol ? columns.indexOf(props.pkCol) : -1;
@@ -97,9 +99,18 @@ export function ResultGrid(props: {
         </colgroup>
         <thead>
           <tr>
-            {columns.map((c, i) => (
-              <th key={`${c}-${i}`} style={{ ...thStyle, position: "sticky" }}>
-                <span style={ellipsis as React.CSSProperties}>{c}</span>
+            {columns.map((c, i) => {
+              const sortable = !!props.onSortColumn;
+              const arrow = props.sort?.col === c ? (props.sort.dir === "desc" ? " ↓" : " ↑") : "";
+              return (
+              <th key={`${c}-${i}`}
+                  onClick={sortable ? () => props.onSortColumn!(c) : undefined}
+                  title={sortable ? "点击排序(倒序 → 升序 → 取消)" : undefined}
+                  style={{ ...thStyle, position: "sticky", cursor: sortable ? "pointer" : "default" }}>
+                <span style={ellipsis as React.CSSProperties}>
+                  {c}
+                  {arrow && <span style={{ color: "var(--accent)", fontWeight: 700 }}>{arrow}</span>}
+                </span>
                 <span
                   onMouseDown={(e) => startResize(i, e)}
                   onClick={(e) => e.stopPropagation()}
@@ -107,7 +118,8 @@ export function ResultGrid(props: {
                   style={{ position: "absolute", top: 0, right: 0, width: 7, height: "100%", cursor: "col-resize" }}
                 />
               </th>
-            ))}
+              );
+            })}
             {fill > 0 && <th style={{ ...thStyle, position: "sticky", borderRight: "none" }} />}
           </tr>
         </thead>

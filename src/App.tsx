@@ -47,7 +47,10 @@ interface Tab {
   err: string | null;
   selectedRow: number | null; // 结果中选中的行(用于右栏行详情)
   resultIsQuery: boolean;     // 当前结果来自查询(SELECT)还是非查询语句(DDL/DML)
+  sort: SortState;            // 浏览表时的排序(点击表头);null 表示不排序
 }
+
+type SortState = { col: string; dir: "asc" | "desc" } | null;
 
 function HHandle() {
   return <PanelResizeHandle style={{ width: 5, background: "var(--border)", cursor: "col-resize" }} />;
@@ -67,8 +70,10 @@ const relApi = (kind: DbKind) =>
     : { connect: pgConnect, list: pgListObjects, query: pgQuery, detail: pgTableDetail, commit: pgCommitEdits,
         q: (t: string) => `"${t.replace(/"/g, '""')}"`, dialect: "pg" as const };
 
-const pageSql = (t: string, p: number, kind: DbKind) =>
-  `SELECT * FROM ${relApi(kind).q(t)} LIMIT ${PAGE_SIZE} OFFSET ${p * PAGE_SIZE}`;
+const pageSql = (t: string, p: number, kind: DbKind, sort?: SortState) => {
+  const order = sort ? ` ORDER BY ${relApi(kind).q(sort.col)} ${sort.dir === "desc" ? "DESC" : "ASC"}` : "";
+  return `SELECT * FROM ${relApi(kind).q(t)}${order} LIMIT ${PAGE_SIZE} OFFSET ${p * PAGE_SIZE}`;
+};
 
 export default function App() {
   const { name, toggle } = useTheme();
@@ -169,7 +174,7 @@ export default function App() {
     if (kind === "redis") {
       const fresh: Tab = {
         id, connId: activeId, kind, title: t, table: t, sql: "",
-        result: null, detail: null, redisDetail: null, page: 0, browseTable: null, dirty: {}, err: null, selectedRow: null, resultIsQuery: true,
+        result: null, detail: null, redisDetail: null, page: 0, browseTable: null, dirty: {}, err: null, selectedRow: null, resultIsQuery: true, sort: null,
       };
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
@@ -183,7 +188,7 @@ export default function App() {
       const sql = pageSql(t, 0, kind);
       const fresh: Tab = {
         id, connId: activeId, kind, title: t, table: t, sql,
-        result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null, selectedRow: null, resultIsQuery: true,
+        result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null, selectedRow: null, resultIsQuery: true, sort: null,
       };
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
@@ -197,10 +202,25 @@ export default function App() {
 
   const gotoPage = async (p: number) => {
     if (!tab || tab.browseTable === null || p < 0) return;
-    const sql = pageSql(tab.browseTable, p, tab.kind);
+    const sql = pageSql(tab.browseTable, p, tab.kind, tab.sort);
     try {
       const result = await relApi(tab.kind).query(tab.connId, sql);
       patch(tab.id, { page: p, sql, result, err: null, selectedRow: null, resultIsQuery: true });
+    } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
+  };
+
+  // 点击表头循环排序:无 → 倒序(DESC) → 升序(ASC) → 无;每次按新排序重查第一页
+  const cycleSort = async (col: string) => {
+    if (!tab || tab.browseTable === null) return;
+    const cur = tab.sort;
+    const next: SortState =
+      !cur || cur.col !== col ? { col, dir: "desc" }
+      : cur.dir === "desc" ? { col, dir: "asc" }
+      : null;
+    const sql = pageSql(tab.browseTable, 0, tab.kind, next);
+    try {
+      const result = await relApi(tab.kind).query(tab.connId, sql);
+      patch(tab.id, { sort: next, page: 0, sql, result, err: null, selectedRow: null, resultIsQuery: true });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
 
@@ -219,7 +239,7 @@ export default function App() {
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
       const result = await relApi(tab.kind).query(tab.connId, q);
-      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null, resultIsQuery: isQuery(q) });
+      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null, resultIsQuery: isQuery(q), sort: null });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
 
@@ -230,7 +250,7 @@ export default function App() {
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
       const result = await relApi(tab.kind).query(tab.connId, `EXPLAIN ${q}`);
-      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null, resultIsQuery: true });
+      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null, resultIsQuery: true, sort: null });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
 
@@ -247,7 +267,7 @@ export default function App() {
     try {
       const r = relApi(tab.kind);
       await r.commit(tab.connId, edits.map((e) => ({ ...e, table: tab.table! })));
-      const sql = tab.browseTable ? pageSql(tab.browseTable, tab.page, tab.kind) : tab.sql;
+      const sql = tab.browseTable ? pageSql(tab.browseTable, tab.page, tab.kind, tab.sort) : tab.sql;
       const result = await r.query(tab.connId, sql);
       patch(tab.id, { dirty: {}, result, sql, err: null, resultIsQuery: true });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
@@ -277,7 +297,7 @@ export default function App() {
     const r = relApi(tab.kind);
     try {
       const detail = await r.detail(tab.connId, tab.table);
-      const sql = tab.browseTable ? pageSql(tab.browseTable, tab.page, tab.kind) : tab.sql;
+      const sql = tab.browseTable ? pageSql(tab.browseTable, tab.page, tab.kind, tab.sort) : tab.sql;
       const result = await r.query(tab.connId, sql);
       patch(tab.id, { detail, result, err: null, selectedRow: null, resultIsQuery: true });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
@@ -495,6 +515,8 @@ export default function App() {
                           <ResultGrid result={tab.result} pkCol={pkCol} dirtyKeys={dirtyKeys}
                             onStage={stageEdit} onCommit={commit}
                             selectedRow={tab.selectedRow}
+                            sort={tab.sort}
+                            onSortColumn={tab.browseTable ? cycleSort : undefined}
                             onSelectRow={(i) => { patch(tab.id, { selectedRow: i }); rightRef.current?.expand(); }}
                             onCopyInsertRow={(i) => copyInsertRow(i)} />}
                       </div>
