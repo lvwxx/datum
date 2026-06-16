@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { QueryResult, CellEdit } from "../../api/pg";
 import { Modal } from "../Modal";
 import { ContextMenu } from "../ContextMenu";
+import { copyToClipboard } from "../../lib/clipboard";
+import { toast } from "../Toast";
 
 const DEFAULT_W = 160;
 const MIN_W = 48;
@@ -162,9 +164,17 @@ export function ResultGrid(props: {
       {cell && (
         <Modal onClose={() => setCell(null)}>
           <div style={{ padding: 14, display: "grid", gap: 10, minWidth: 380, maxWidth: 600 }}>
-            <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>
-              列 <b style={{ color: "var(--fg)" }}>{columns[cell.c]}</b>
-              {editable ? "" : " · 仅查看(无主键)"}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>
+                列 <b style={{ color: "var(--fg)" }}>{columns[cell.c]}</b>
+                {editable ? "" : " · 仅查看(无主键)"}
+              </div>
+              <button
+                onClick={() => { copyToClipboard(draft); toast.success("已复制"); setCell(null); }}
+                title="复制当前内容"
+                style={{ flexShrink: 0, background: "transparent", color: "var(--fg-muted)", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 12px", fontSize: 12, cursor: "pointer" }}>
+                复制
+              </button>
             </div>
             <textarea
               value={draft}
