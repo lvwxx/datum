@@ -24,8 +24,16 @@ import { ConnectionForm } from "./components/Sidebar/ConnectionForm";
 import { ObjectTree } from "./components/Sidebar/ObjectTree";
 import { SqlEditor } from "./components/editor/SqlEditor";
 import { ResultGrid } from "./components/results/ResultGrid";
+import { ResultsToolbar } from "./components/results/ResultsToolbar";
 import { TableDetail } from "./components/detail/TableDetail";
 import { RowDetail } from "./components/detail/RowDetail";
+import { TitleBar } from "./components/chrome/TitleBar";
+import { Breadcrumb } from "./components/chrome/Breadcrumb";
+import { TabStrip } from "./components/chrome/TabStrip";
+import { StatusBar } from "./components/chrome/StatusBar";
+import { IconButton } from "./components/chrome/IconButton";
+import { toCsv, downloadText } from "./lib/csv";
+import { Plus } from "lucide-react";
 import type { Connection, DbKind } from "./types";
 
 const PAGE_SIZE = 100;
@@ -48,7 +56,13 @@ interface Tab {
   selectedRow: number | null; // 结果中选中的行(用于右栏行详情)
   resultIsQuery: boolean;     // 当前结果来自查询(SELECT)还是非查询语句(DDL/DML)
   sort: SortState;            // 浏览表时的排序(点击表头);null 表示不排序
+  elapsedMs: number | null;   // 最近一次查询耗时(毫秒),显示在结果工具栏
 }
+
+// DbKind → 状态栏展示标签
+const dbLabel: Record<DbKind, string> = {
+  pg: "PostgreSQL", mysql: "MySQL", sqlite: "SQLite", redis: "Redis",
+};
 
 type SortState = { col: string; dir: "asc" | "desc" } | null;
 
@@ -174,7 +188,7 @@ export default function App() {
     if (kind === "redis") {
       const fresh: Tab = {
         id, connId: activeId, kind, title: t, table: t, sql: "",
-        result: null, detail: null, redisDetail: null, page: 0, browseTable: null, dirty: {}, err: null, selectedRow: null, resultIsQuery: true, sort: null,
+        result: null, detail: null, redisDetail: null, page: 0, browseTable: null, dirty: {}, err: null, selectedRow: null, resultIsQuery: true, sort: null, elapsedMs: null,
       };
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
@@ -188,14 +202,16 @@ export default function App() {
       const sql = pageSql(t, 0, kind);
       const fresh: Tab = {
         id, connId: activeId, kind, title: t, table: t, sql,
-        result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null, selectedRow: null, resultIsQuery: true, sort: null,
+        result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null, selectedRow: null, resultIsQuery: true, sort: null, elapsedMs: null,
       };
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
       try {
+        const t0 = performance.now();
         const result = await r.query(activeId, sql);
+        const elapsedMs = Math.round(performance.now() - t0);
         const detail = await r.detail(activeId, t);
-        patch(id, { result, detail });
+        patch(id, { result, detail, elapsedMs });
       } catch (e) { patch(id, { err: JSON.stringify(e) }); }
     }
   };
@@ -204,8 +220,9 @@ export default function App() {
     if (!tab || tab.browseTable === null || p < 0) return;
     const sql = pageSql(tab.browseTable, p, tab.kind, tab.sort);
     try {
+      const t0 = performance.now();
       const result = await relApi(tab.kind).query(tab.connId, sql);
-      patch(tab.id, { page: p, sql, result, err: null, selectedRow: null, resultIsQuery: true });
+      patch(tab.id, { page: p, sql, result, err: null, selectedRow: null, resultIsQuery: true, elapsedMs: Math.round(performance.now() - t0) });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
 
@@ -219,8 +236,9 @@ export default function App() {
       : null;
     const sql = pageSql(tab.browseTable, 0, tab.kind, next);
     try {
+      const t0 = performance.now();
       const result = await relApi(tab.kind).query(tab.connId, sql);
-      patch(tab.id, { sort: next, page: 0, sql, result, err: null, selectedRow: null, resultIsQuery: true });
+      patch(tab.id, { sort: next, page: 0, sql, result, err: null, selectedRow: null, resultIsQuery: true, elapsedMs: Math.round(performance.now() - t0) });
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
 
@@ -230,16 +248,18 @@ export default function App() {
       const cmd = (selectionText() || tab.sql).trim();
       if (!cmd) { patch(tab.id, { err: "命令为空" }); return; }
       try {
+        const t0 = performance.now();
         const reply = await redisExec(tab.connId, cmd);
-        patch(tab.id, { result: { columns: ["结果"], rows: reply ? reply.split("\n").map((l) => [l]) : [], affected: null }, err: null, selectedRow: null });
+        patch(tab.id, { result: { columns: ["结果"], rows: reply ? reply.split("\n").map((l) => [l]) : [], affected: null }, err: null, selectedRow: null, elapsedMs: Math.round(performance.now() - t0) });
       } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
       return;
     }
     const q = sqlToRun();
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
+      const t0 = performance.now();
       const result = await relApi(tab.kind).query(tab.connId, q);
-      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null, resultIsQuery: isQuery(q), sort: null });
+      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null, resultIsQuery: isQuery(q), sort: null, elapsedMs: Math.round(performance.now() - t0) });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
 
@@ -249,8 +269,9 @@ export default function App() {
     const q = sqlToRun();
     if (!q.trim()) { patch(tab.id, { err: "SQL 为空" }); return; }
     try {
+      const t0 = performance.now();
       const result = await relApi(tab.kind).query(tab.connId, `EXPLAIN ${q}`);
-      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null, resultIsQuery: true, sort: null });
+      patch(tab.id, { result, err: null, browseTable: null, page: 0, selectedRow: null, resultIsQuery: true, sort: null, elapsedMs: Math.round(performance.now() - t0) });
     } catch (e) { patch(tab.id, { result: null, err: JSON.stringify(e) }); }
   };
 
@@ -388,6 +409,13 @@ export default function App() {
     if (tab?.detail && tab.table) copyWithToast(buildInsert(tab.table, tab.detail, relApi(tab.kind).dialect));
   };
 
+  // 导出当前结果为 CSV
+  const exportCsv = () => {
+    if (!tab?.result || tab.result.rows.length === 0) return;
+    downloadText(`${tab.table ?? "result"}.csv`, toCsv(tab.result.columns, tab.result.rows));
+    toast.success("已导出 CSV");
+  };
+
   // 复制结果某一行的 INSERT(真实值)
   const copyInsertRow = (rowIndex: number) => {
     if (!tab?.result) return;
@@ -397,14 +425,16 @@ export default function App() {
   };
 
   return (
-    <div style={{ height: "100vh" }}>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+      <TitleBar />
+      <div style={{ flex: 1, minHeight: 0 }}>
       <PanelGroup direction="horizontal" autoSaveId="dbstudio-cols">
         {/* 左栏 */}
         <Panel defaultSize={18} minSize={10}>
-          <aside style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg-panel)", overflow: "hidden" }}>
-            <div style={{ padding: 8, display: "flex", justifyContent: "space-between", flexShrink: 0 }}>
-              <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>连接</span>
-              <button onClick={openNew} title="新建连接">＋</button>
+          <aside style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--sidebar-bg)", overflow: "hidden", borderRight: "1px solid var(--border)" }}>
+            <div style={{ height: 46, padding: "0 14px 0 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+              <span style={{ color: "var(--fg-faint)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>连接</span>
+              <IconButton size={26} title="新建连接" onClick={openNew} style={{ borderRadius: "50%" }}><Plus size={16} /></IconButton>
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
               <ConnectionList
@@ -422,12 +452,6 @@ export default function App() {
                     : null}
               />
             </div>
-            <div style={{ padding: 8, flexShrink: 0, borderTop: "1px solid var(--border)" }}>
-              <button onClick={toggle} title="切换主题"
-                style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 10, cursor: "pointer", padding: "4px 10px", fontSize: 15 }}>
-                {name === "light" ? "🌙" : "☀️"}
-              </button>
-            </div>
           </aside>
         </Panel>
 
@@ -435,84 +459,56 @@ export default function App() {
 
         {/* 中栏 */}
         <Panel defaultSize={58} minSize={25}>
-          <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-            {/* 连接信息条 + 右栏开关 */}
-            <div style={{ padding: "5px 10px", fontSize: 12, borderBottom: "1px solid var(--border)", background: "var(--bg-panel)", color: headConn ? "var(--fg)" : "var(--fg-muted)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {headConn
-                  ? <>🔌 {headConn.name} · 库 <b>{headConn.kind === "sqlite" ? (headConn.filePath?.split(/[/\\]/).pop() || headConn.filePath || "—") : headConn.database}</b>{tab?.table ? ` · ${tab.kind === "redis" ? "key" : "表"} ${tab.table}` : ""}</>
-                  : "未连接 —— 点左侧连接"}
-              </span>
-              <button onClick={toggleRight} title={rightOpen ? "隐藏详情栏" : "显示详情栏"}
-                style={{ flexShrink: 0, background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--fg-muted)", cursor: "pointer", padding: "1px 8px", fontSize: 14, lineHeight: 1.4 }}>
-                {rightOpen ? "»" : "«"}
-              </button>
-            </div>
+          <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+            <Breadcrumb
+              connName={headConn?.name ?? null}
+              dbName={headConn ? (headConn.kind === "sqlite" ? (headConn.filePath?.split(/[/\\]/).pop() || headConn.filePath || "—") : headConn.database) : null}
+              tableLabel={tab?.table ?? null}
+              tableWord={tab?.kind === "redis" ? "key" : "表"}
+              rightOpen={rightOpen}
+              onToggleRight={toggleRight}
+            />
 
-            {/* 标签页栏 */}
-            <div style={{ display: "flex", alignItems: "stretch", overflowX: "auto", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-              {tabs.map((t) => (
-                <div key={t.id}
-                     onClick={() => setActiveTabId(t.id)}
-                     onContextMenu={(e) => { e.preventDefault(); setTabMenu({ id: t.id, x: e.clientX, y: e.clientY }); }}
-                     title={t.title}
-                     style={{
-                       display: "flex", alignItems: "center", gap: 6, padding: "4px 8px",
-                       cursor: "pointer", fontSize: 12, whiteSpace: "nowrap",
-                       borderRight: "1px solid var(--border)",
-                       background: t.id === activeTabId ? "var(--bg)" : "transparent",
-                       borderTop: t.id === activeTabId ? "2px solid var(--accent)" : "2px solid transparent",
-                     }}>
-                  <span style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>
-                  <span onClick={(e) => { e.stopPropagation(); closeTab(t.id); }}
-                        title="关闭" style={{ color: "var(--fg-muted)", padding: "0 2px" }}>✕</span>
-                </div>
-              ))}
-            </div>
+            <TabStrip
+              tabs={tabs.map((t) => ({ id: t.id, title: t.title }))}
+              activeTabId={activeTabId}
+              onActivate={setActiveTabId}
+              onClose={closeTab}
+              onContext={(id, x, y) => setTabMenu({ id, x, y })}
+            />
 
             {tab ? (
               <div style={{ flex: 1, minHeight: 0 }}>
                 <PanelGroup direction="vertical" autoSaveId="dbstudio-mid">
-                  <Panel defaultSize={40} minSize={12}>
-                    <SqlEditor value={tab.sql} onChange={(v) => patch(tab.id, { sql: v })} onRun={runSql} dark={name === "mirage"} onView={(v) => { viewRef.current = v; }} />
+                  <Panel defaultSize={32} minSize={12}>
+                    <SqlEditor value={tab.sql} onChange={(v) => patch(tab.id, { sql: v })} onRun={runSql} dark={name === "dark"} onView={(v) => { viewRef.current = v; }} />
                   </Panel>
 
                   <VHandle />
 
-                  <Panel defaultSize={60} minSize={15}>
-                    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-                      {/* 结果状态条 + 运行按钮(右上) */}
-                      <div style={{ padding: "4px 10px", fontSize: 11, color: "var(--fg-muted)", borderBottom: "1px solid var(--border)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        <span>
-                          {tab.err ? <span style={{ color: "var(--error)" }}>查询出错</span>
-                            : tab.result ? (!tab.resultIsQuery
-                                ? `执行成功${tab.result.affected ? ` · 影响 ${tab.result.affected} 行` : ""}`
-                                : `${tab.result.rows.length} 行 · ${tab.result.columns.length} 列${tab.result.affected ? ` · 影响 ${tab.result.affected}` : ""}`)
-                            : "就绪"}
-                        </span>
-                        <span style={{ flexShrink: 0, display: "flex", gap: 6 }}>
-                          {tab.kind !== "redis" && (
-                            <button onClick={explain} title="查看执行计划(EXPLAIN)"
-                              style={{ background: "transparent", color: "var(--fg-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 10px", fontSize: 11, cursor: "pointer" }}>
-                              Explain
-                            </button>
-                          )}
-                          <button onClick={runSql} title="运行 (⌘↵)"
-                            style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 4, padding: "2px 12px", fontSize: 11, cursor: "pointer" }}>
-                            ▶ 运行 ⌘↵
-                          </button>
-                        </span>
-                      </div>
+                  <Panel defaultSize={68} minSize={15}>
+                    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+                      <ResultsToolbar
+                        err={tab.err}
+                        result={tab.result}
+                        isQuery={tab.resultIsQuery}
+                        elapsedMs={tab.elapsedMs}
+                        kind={tab.kind}
+                        onRun={runSql}
+                        onExplain={explain}
+                        onExport={exportCsv}
+                      />
                       {/* 结果滚动区 */}
                       <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-                        {tab.err && <div style={{ color: "var(--error)", padding: 8, fontSize: 12, whiteSpace: "pre-wrap" }}>{tab.err}</div>}
+                        {tab.err && <div className="mono" style={{ color: "var(--error)", padding: 12, fontSize: 12, whiteSpace: "pre-wrap" }}>{tab.err}</div>}
                         {!tab.err && tab.result && tab.result.rows.length === 0 && (
                           !tab.resultIsQuery
-                            ? <div style={{ padding: 8, color: "var(--accent)", fontSize: 12 }}>✓ 执行成功{tab.result.affected ? ` · 影响 ${tab.result.affected} 行` : ""}</div>
-                            : <div style={{ padding: 8, color: "var(--fg-muted)", fontSize: 12 }}>查询成功,但没有行(0 行)</div>
+                            ? <div style={{ padding: 12, color: "var(--accent-bright)", fontSize: 13 }}>✓ 执行成功{tab.result.affected ? ` · 影响 ${tab.result.affected} 行` : ""}</div>
+                            : <div style={{ padding: 12, color: "var(--fg-muted)", fontSize: 13 }}>查询成功,但没有行(0 行)</div>
                         )}
                         {!tab.err && tab.result && tab.result.rows.length > 0 &&
                           <ResultGrid result={tab.result} pkCol={pkCol} dirtyKeys={dirtyKeys}
+                            colTypes={tab.detail ? Object.fromEntries(tab.detail.columns.map((c) => [c.name, c.dataType])) : {}}
                             onStage={stageEdit} onCommit={commit}
                             selectedRow={tab.selectedRow}
                             sort={tab.sort}
@@ -520,23 +516,28 @@ export default function App() {
                             onSelectRow={(i) => { patch(tab.id, { selectedRow: i }); rightRef.current?.expand(); }}
                             onCopyInsertRow={(i) => copyInsertRow(i)} />}
                       </div>
-                      {/* 分页(右下) */}
-                      {tab.browseTable && (
-                        <div style={{ flexShrink: 0, borderTop: "1px solid var(--border)", padding: "4px 10px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, fontSize: 12 }}>
-                          <span style={{ color: "var(--fg-muted)" }}>第 {tab.page + 1} 页 · 每页 {PAGE_SIZE}</span>
-                          <button disabled={!canPrev} onClick={() => gotoPage(tab.page - 1)} title="上一页">←</button>
-                          <button disabled={!canNext} onClick={() => gotoPage(tab.page + 1)} title="下一页">→</button>
-                        </div>
-                      )}
                     </div>
                   </Panel>
                 </PanelGroup>
               </div>
             ) : (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-muted)", fontSize: 13 }}>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--fg-faint)", fontSize: 13 }}>
                 点左侧的表打开一个标签页
               </div>
             )}
+
+            <StatusBar
+              themeName={name}
+              onToggleTheme={toggle}
+              dbLabel={headConn ? dbLabel[headConn.kind] : null}
+              showPager={!!tab?.browseTable}
+              page={tab?.page ?? 0}
+              pageSize={PAGE_SIZE}
+              canPrev={canPrev}
+              canNext={canNext}
+              onPrev={() => { if (tab) gotoPage(tab.page - 1); }}
+              onNext={() => { if (tab) gotoPage(tab.page + 1); }}
+            />
           </div>
         </Panel>
 
@@ -570,6 +571,7 @@ export default function App() {
           </aside>
         </Panel>
       </PanelGroup>
+      </div>
 
       {formOpen && (
         <Modal onClose={closeForm}>
@@ -646,14 +648,14 @@ export default function App() {
               <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", borderBottom: "1px solid var(--border)" }}>
                 <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>建表语句 · <b style={{ color: "var(--fg)" }}>{ddl.table}</b></span>
                 <span style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => copyWithToast(ddl.sql)} title="复制全部"
-                    style={{ background: "var(--accent)", color: "#fff", border: 0, borderRadius: 8, padding: "4px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>复制</button>
-                  <button onClick={() => setDdl(null)} title="关闭"
-                    style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 12px", cursor: "pointer", fontSize: 12, color: "var(--fg-muted)" }}>关闭</button>
+                  <button className="btn-pill btn-run" onClick={() => copyWithToast(ddl.sql)} title="复制全部"
+                    style={{ padding: "4px 14px", fontSize: 12 }}>复制</button>
+                  <button className="btn-pill" onClick={() => setDdl(null)} title="关闭"
+                    style={{ padding: "4px 12px", fontSize: 12, color: "var(--fg-muted)" }}>关闭</button>
                 </span>
               </div>
               <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-                <SqlView value={ddl.sql} dark={name === "mirage"} />
+                <SqlView value={ddl.sql} dark={name === "dark"} />
               </div>
             </div>
           </>
@@ -672,12 +674,12 @@ export default function App() {
               此操作不可撤销{confirmDel.env !== "local" ? ",并会清除钥匙串中保存的密码" : ""}。
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setConfirmDel(null)}
-                style={{ background: "transparent", color: "var(--fg-muted)", border: "1px solid var(--border)", borderRadius: 12, padding: "9px 18px", cursor: "pointer" }}>
+              <button className="btn-pill" onClick={() => setConfirmDel(null)}
+                style={{ color: "var(--fg-muted)", padding: "9px 18px" }}>
                 取消
               </button>
-              <button onClick={confirmDelete}
-                style={{ background: "var(--error)", color: "#fff", border: 0, borderRadius: 12, padding: "9px 18px", cursor: "pointer", fontWeight: 600 }}>
+              <button className="btn-pill" onClick={confirmDelete}
+                style={{ background: "var(--error)", color: "#fff", border: 0, padding: "9px 18px", fontWeight: 700 }}>
                 删除
               </button>
             </div>

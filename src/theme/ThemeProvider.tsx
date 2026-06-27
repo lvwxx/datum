@@ -13,10 +13,10 @@ function applyTokens(name: ThemeName) {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [name, setName] = useState<ThemeName>(
-    () => (localStorage.getItem("theme") as ThemeName) || "light"
+    () => (localStorage.getItem("theme") as ThemeName) || "dark"
   );
   useEffect(() => { applyTokens(name); localStorage.setItem("theme", name); }, [name]);
-  const toggle = () => setName((n) => (n === "light" ? "mirage" : "light"));
+  const toggle = () => setName((n) => (n === "dark" ? "light" : "dark"));
   return <Ctx.Provider value={{ name, toggle }}>{children}</Ctx.Provider>;
 }
 

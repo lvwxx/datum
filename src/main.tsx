@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import "@fontsource-variable/manrope";
 import "./theme/theme.css";
 
 // ⌘R / Ctrl+R:重新加载整个应用。注册在 React 之外的全局层,

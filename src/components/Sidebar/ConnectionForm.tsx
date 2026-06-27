@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { FolderOpen } from "lucide-react";
 import type { Connection, DbKind, Env } from "../../types";
 
 const blank: Connection = {
@@ -51,12 +52,12 @@ export function ConnectionForm(props: {
   const caption = { fontSize: 12, color: "var(--fg)", fontWeight: 600 } as const; // 配置名:最深
 
   const primaryBtn: React.CSSProperties = {
-    background: "var(--accent)", color: "#fff", border: 0, borderRadius: 12,
-    padding: "9px 20px", cursor: "pointer", fontWeight: 600,
+    background: "var(--accent)", color: "var(--on-accent)", border: 0, borderRadius: 9999,
+    padding: "9px 20px", cursor: "pointer", fontWeight: 700,
   };
   const ghostBtn: React.CSSProperties = {
     background: "transparent", color: "var(--fg-muted)", border: "1px solid var(--border)",
-    borderRadius: 12, padding: "9px 18px", cursor: "pointer",
+    borderRadius: 9999, padding: "9px 18px", cursor: "pointer",
   };
 
   return (
@@ -92,8 +93,11 @@ export function ConnectionForm(props: {
                    onChange={(e) => upd("filePath", e.target.value)}
                    autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
             <button type="button" onClick={pickFile} title="选择文件" aria-label="选择文件"
-                    style={{ flexShrink: 0, background: "transparent", border: "1px solid var(--border)",
-                             borderRadius: 8, cursor: "pointer", padding: "0 11px", fontSize: 15 }}>📁</button>
+                    style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center",
+                             background: "transparent", border: "1px solid var(--border)",
+                             borderRadius: 6, cursor: "pointer", padding: "0 11px" }}>
+              <FolderOpen size={16} />
+            </button>
           </div>
         </label>
       ) : (

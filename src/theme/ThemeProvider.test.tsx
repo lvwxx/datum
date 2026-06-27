@@ -9,15 +9,15 @@ function Probe() {
   return <button onClick={toggle}>theme:{name}</button>;
 }
 
-test("defaults to light and applies accent var to root", () => {
+test("defaults to dark and applies the green accent var to root", () => {
   render(<ThemeProvider><Probe /></ThemeProvider>);
-  expect(screen.getByText("theme:light")).toBeInTheDocument();
-  expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#FF9940");
+  expect(screen.getByText("theme:dark")).toBeInTheDocument();
+  expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#1db954");
 });
 
-test("toggle switches to mirage and updates the var", () => {
+test("toggle switches to light and keeps the green accent", () => {
   render(<ThemeProvider><Probe /></ThemeProvider>);
   fireEvent.click(screen.getByRole("button"));
-  expect(screen.getByText("theme:mirage")).toBeInTheDocument();
-  expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#FFCC66");
+  expect(screen.getByText("theme:light")).toBeInTheDocument();
+  expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#1db954");
 });

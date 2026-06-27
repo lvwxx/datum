@@ -1,5 +1,7 @@
+import { Table as TableIcon } from "lucide-react";
 import { MiddleEllipsis } from "../MiddleEllipsis";
 
+/** 表 / key 列表。激活项:左侧 3px 绿条 + 加粗 + 高亮底色。 */
 export function ObjectTree(props: {
   tables: string[];
   active: string | null;
@@ -9,29 +11,40 @@ export function ObjectTree(props: {
   onContext?: (t: string, x: number, y: number) => void;
 }) {
   return (
-    <div style={{ padding: "2px 0" }}>
-      {props.tables.map((t) => (
-        <div key={t}
-             onClick={() => props.onSelect(t)}
-             onContextMenu={(e) => {
-               e.preventDefault();
-               const r = e.currentTarget.getBoundingClientRect();
-               // 锚定到高亮框左上角附近,略上移补偿菜单自身内边距,避免偏下
-               props.onContext?.(t, r.right - 6, r.top - 4);
-             }}
-             style={{
-               margin: "1px 6px", padding: "3px 8px 3px 22px", cursor: "pointer", fontSize: 12,
-               display: "flex", alignItems: "center", gap: 4, overflow: "hidden",
-               borderRadius: 6,
-               // 始终保留 2px 透明边框,高亮时仅换色,避免布局抖动
-               border: "2px solid transparent",
-               borderColor: t === props.contextTable ? "var(--accent)" : "transparent",
-               background: t === props.active ? "var(--selection)" : "transparent",
-             }}>
-          <span style={{ color: "var(--fg-muted)", flexShrink: 0 }}>▦</span>
-          <MiddleEllipsis text={t} />
-        </div>
-      ))}
+    <div style={{ padding: "4px 8px 12px" }}>
+      {props.tables.map((t) => {
+        const active = t === props.active;
+        const ctx = t === props.contextTable;
+        return (
+          <div
+            key={t}
+            className={`side-row${active ? " active" : ""}`}
+            onClick={() => props.onSelect(t)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              const r = e.currentTarget.getBoundingClientRect();
+              props.onContext?.(t, r.right - 6, r.top - 4);
+            }}
+            style={{
+              position: "relative", height: 32, marginBottom: 1, borderRadius: 4,
+              padding: "0 12px 0 16px", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 10, overflow: "hidden",
+              boxShadow: ctx ? "inset 0 0 0 1px var(--accent)" : undefined,
+            }}
+          >
+            {active && (
+              <span style={{
+                position: "absolute", left: 0, top: 6, bottom: 6, width: 3,
+                background: "var(--accent)", borderRadius: "0 3px 3px 0",
+              }} />
+            )}
+            <TableIcon size={14} color={active ? "var(--fg)" : "var(--fg-faint)"} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: active ? 700 : 400, color: active ? "var(--fg)" : "var(--fg-soft)" }}>
+              <MiddleEllipsis text={t} />
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
