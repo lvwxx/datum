@@ -1,6 +1,6 @@
 # Datum
 
-一款简约现代的桌面数据库管理工具,支持 **PostgreSQL** 与 **Redis**。基于 Tauri 2 + React + TypeScript 构建,体积小、启动快。
+一款简约现代的桌面数据库管理工具,支持 **PostgreSQL** 与 **Redis** 等种数据库。基于 Tauri 2 + React + TypeScript 构建,体积小、启动快。
 
 <img width="3504" height="1960" alt="image" src="https://github.com/user-attachments/assets/671b93b7-1a68-42e3-83b4-1b10f34d603f" />
 
