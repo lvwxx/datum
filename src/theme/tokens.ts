@@ -37,6 +37,10 @@ export const THEMES: Record<ThemeName, Tokens> = {
     "--cell-hash": "#6e6e6e",
     "--cell-null": "#585858",
 
+    // 滚动条滑块
+    "--scrollbar-thumb": "#3a3a3a",
+    "--scrollbar-thumb-hover": "#565656",
+
     // 绿色 accent(仅功能性使用)
     "--accent": "#1db954",
     "--accent-bright": "#1ed760",
@@ -95,6 +99,10 @@ export const THEMES: Record<ThemeName, Tokens> = {
     "--cell-dim": "#6b6b70",
     "--cell-hash": "#9a9aa0",
     "--cell-null": "#b0b0b6",
+
+    // 滚动条滑块
+    "--scrollbar-thumb": "#c8c8cc",
+    "--scrollbar-thumb-hover": "#aeb0b6",
 
     "--accent": "#1db954",
     "--accent-bright": "#159048",

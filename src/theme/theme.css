@@ -10,6 +10,18 @@ body {
 }
 .mono { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
 
+/* 滚动条:细长、半透明轨道 + 内缩圆角滑块(content-box 留 3px 透明边) */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); background-clip: content-box; }
+
 /* 表单控件:继承字号 + 现代化样式 */
 input, select, button, textarea { font-size: inherit; font-family: inherit; }
 input, select, textarea {
