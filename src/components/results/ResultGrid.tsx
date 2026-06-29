@@ -6,6 +6,7 @@ import { ContextMenu } from "../ContextMenu";
 import { copyToClipboard } from "../../lib/clipboard";
 import { toast } from "../Toast";
 import { classifyCell, colAlign } from "./cellStyle";
+import { columnWidths } from "./columnFit";
 
 const DEFAULT_W = 170;
 const MIN_W = 48;
@@ -99,12 +100,16 @@ export function ResultGrid(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns.join("|"), rows, JSON.stringify(types)]);
 
-  // 单列结果(如 EXPLAIN)默认占容器宽度的 50%
-  const defaultW = (i: number) =>
-    single && containerW > 0 ? Math.max(DEFAULT_W, Math.floor(containerW * 0.5)) : (autoWidths[i] ?? DEFAULT_W);
-  const colWidth = (i: number) => widths[i] ?? defaultW(i);
-  const totalWidth = columns.reduce((s, _c, i) => s + colWidth(i), 0);
-  const fill = Math.max(0, containerW - totalWidth); // 不足整宽时用空白列补满
+  // 最终列宽:内容自适应为下限,窄于结果区时按比例伸展铺满(数字/布尔列保持紧凑),
+  // 手动拖拽过的列固定;单列(如 EXPLAIN)取容器半宽。
+  const colW = useMemo(() => {
+    const flexible = columns.map((c) => colAlign(types[c]) === "left");
+    return columnWidths(autoWidths, widths, containerW, DEFAULT_W, flexible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoWidths, widths, containerW, columns.join("|"), JSON.stringify(types)]);
+  const colWidth = (i: number) => colW[i] ?? DEFAULT_W;
+  const totalWidth = colW.reduce((s, w) => s + w, 0);
+  const fill = Math.max(0, containerW - totalWidth); // 全列固定且仍有余宽时用空白列补满
 
   const startResize = (i: number, e: React.MouseEvent) => {
     e.preventDefault();
