@@ -105,6 +105,18 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 .form-input::placeholder { color: var(--fg-faint); opacity: 1; }
 select.form-input { cursor: pointer; }
 
+@keyframes dtm-spin { to { transform: rotate(360deg); } }
+.dtm-spin { animation: dtm-spin 0.7s linear infinite; display: flex; }
+
+/* 测试连接按钮:边框/底色/文字色随状态切换,悬停提亮 */
+.test-btn {
+  display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 18px; border-radius: 9999px;
+  font-size: 13px; font-weight: 700; flex: 0 0 auto;
+  transition: filter 0.12s, color 0.12s, border-color 0.12s, background 0.12s;
+}
+.test-btn:hover { filter: brightness(1.15); }
+
 /* 侧栏行(连接卡片 / 表项):悬停高亮、激活态 */
 .side-row { transition: background 0.12s cubic-bezier(0.3, 0, 0, 1); }
 .side-row:hover { background: var(--raised-bg); }

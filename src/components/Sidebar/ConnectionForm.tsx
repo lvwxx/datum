@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Database, FolderOpen, X, ChevronsUpDown, Eye, Activity, Link2 } from "lucide-react";
+import { Database, FolderOpen, X, ChevronsUpDown, Eye, Activity, Link2, Loader2, Check, AlertCircle } from "lucide-react";
 import type { Connection, DbKind, Env } from "../../types";
+
+type TestStatus = "idle" | "testing" | "success" | "error";
 
 const blank: Connection = {
   id: "", name: "", kind: "pg", env: "local", host: "127.0.0.1",
@@ -32,11 +34,31 @@ export function ConnectionForm(props: {
   initial?: Connection;
   onSubmit: (conn: Connection, password: string) => void;
   onCancel: () => void;
-  onTest?: (conn: Connection, password: string) => void;
+  /** 真实测试连接;成功 resolve,失败 reject 一个 { message, detail } */
+  onTest?: (conn: Connection, password: string) => Promise<void>;
 }) {
   const [c, setC] = useState<Connection>(props.initial ?? blank);
   const [pw, setPw] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const [test, setTest] = useState<{ status: TestStatus; ms: number; msg: string }>({ status: "idle", ms: 0, msg: "" });
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (resetTimer.current) clearTimeout(resetTimer.current); }, []);
+
+  const runTest = async () => {
+    if (test.status === "testing" || !props.onTest) return;
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    setTest({ status: "testing", ms: 0, msg: "" });
+    const t0 = performance.now();
+    try {
+      await props.onTest(c, pw);
+      setTest({ status: "success", ms: Math.round(performance.now() - t0), msg: "" });
+    } catch (e) {
+      const err = e as { message?: string; detail?: string };
+      const msg = err?.message ? `${err.message}${err.detail ? ` · ${err.detail}` : ""}` : "无法连接,请检查配置";
+      setTest({ status: "error", ms: 0, msg });
+    }
+    resetTimer.current = setTimeout(() => setTest((t) => ({ ...t, status: "idle" })), 4000);
+  };
   const upd = (k: keyof Connection, v: string | number) => setC({ ...c, [k]: v });
   const isEdit = !!props.initial;
   const isSqlite = c.kind === "sqlite";
@@ -220,11 +242,36 @@ export function ConnectionForm(props: {
 
       {/* 底部 */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 28px 24px", marginTop: 6 }}>
-        <button type="button" className="btn-pill" onClick={() => props.onTest?.(c, pw)}
-          style={{ height: 38, padding: "0 18px", border: "1px solid var(--fg-faint)", background: "transparent", color: "var(--fg-soft)", fontSize: 13, fontWeight: 700, gap: 8 }}>
-          <Activity size={15} /> 测试连接
-        </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0, flex: "1 1 auto" }}>
+          {(() => {
+            const { status } = test;
+            const theme = {
+              idle: { border: "var(--fg-faint)", bg: "transparent", color: "var(--fg-soft)" },
+              testing: { border: "var(--fg-faint)", bg: "transparent", color: "var(--fg-muted)" },
+              success: { border: "var(--accent)", bg: "rgba(30,215,96,0.12)", color: "var(--accent)" },
+              error: { border: "var(--negative)", bg: "rgba(243,114,127,0.10)", color: "var(--negative)" },
+            }[status];
+            const label = { idle: "测试连接", testing: "测试中…", success: "连接成功", error: "连接失败" }[status];
+            const icon = status === "testing" ? <Loader2 size={15} className="dtm-spin" />
+              : status === "success" ? <Check size={15} strokeWidth={2.6} />
+              : status === "error" ? <AlertCircle size={15} />
+              : <Activity size={15} />;
+            return (
+              <button type="button" className="test-btn" onClick={runTest}
+                style={{ border: `1px solid ${theme.border}`, background: theme.bg, color: theme.color, cursor: status === "testing" ? "progress" : "pointer" }}>
+                {icon} {label}
+              </button>
+            );
+          })()}
+          {(test.status === "success" || test.status === "error") && (
+            <span className={test.status === "success" ? "mono" : undefined}
+              style={{ fontSize: 12.5, fontWeight: 600, color: test.status === "success" ? "var(--accent)" : "var(--negative)",
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+              {test.status === "success" ? `连接正常 · 用时 ${test.ms} ms` : test.msg}
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "0 0 auto" }}>
           <button type="button" className="btn-pill" onClick={props.onCancel}
             style={{ height: 38, padding: "0 22px", border: "none", background: "transparent", color: "var(--fg-muted)", fontSize: 14, fontWeight: 700 }}>取消</button>
           <button type="submit" className="btn-pill btn-run"

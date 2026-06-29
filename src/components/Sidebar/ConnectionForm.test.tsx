@@ -29,6 +29,21 @@ test("password eye toggles the field between hidden and visible", () => {
   expect(pw.type).toBe("password");
 });
 
+test("test connection: resolves -> success state with elapsed message", async () => {
+  render(<ConnectionForm onSubmit={() => {}} onCancel={() => {}} onTest={() => Promise.resolve()} />);
+  fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
+  expect(await screen.findByText("连接成功")).toBeInTheDocument();
+  expect(await screen.findByText(/连接正常 · 用时/)).toBeInTheDocument();
+});
+
+test("test connection: rejects -> error state showing the real message", async () => {
+  render(<ConnectionForm onSubmit={() => {}} onCancel={() => {}}
+    onTest={() => Promise.reject({ message: "连接 PostgreSQL 失败", detail: "connection refused" })} />);
+  fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
+  expect(await screen.findByText("连接失败")).toBeInTheDocument();
+  expect(await screen.findByText(/connection refused/)).toBeInTheDocument();
+});
+
 test("selecting SQLite reveals the file-path field and hides host", () => {
   render(<ConnectionForm onSubmit={() => {}} onCancel={() => {}} />);
   expect(screen.getByLabelText("主机")).toBeInTheDocument();
