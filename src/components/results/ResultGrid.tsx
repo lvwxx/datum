@@ -216,10 +216,9 @@ export function ResultGrid(props: {
             const rowBg = selected ? "var(--selection)" : hovered ? "var(--row-hover)" : (ri % 2 === 1 ? "var(--zebra)" : "transparent");
             return (
               <tr key={ri}
-                  onClick={() => props.onSelectRow?.(ri)}
                   onMouseEnter={() => setHoverRow(ri)}
                   onMouseLeave={() => setHoverRow((h) => (h === ri ? null : h))}
-                  style={{ cursor: "pointer" }}>
+                  style={{ cursor: "default" }}>
                 {row.map((cellVal, ci) => {
                   const pkValue = pkIndex >= 0 ? row[pkIndex] ?? "" : "";
                   const dirty = props.dirtyKeys.has(`${pkValue}|${columns[ci]}`);
@@ -231,7 +230,7 @@ export function ResultGrid(props: {
                   return (
                     <td key={ci}
                         onDoubleClick={() => openCell(ri, ci)}
-                        onContextMenu={(e) => { e.preventDefault(); props.onSelectRow?.(ri); setMenu({ r: ri, c: ci, x: e.clientX, y: e.clientY }); }}
+                        onContextMenu={(e) => { e.preventDefault(); setMenu({ r: ri, c: ci, x: e.clientX, y: e.clientY }); }}
                         title="双击查看完整内容"
                         className={mono ? "mono" : undefined}
                         style={{
@@ -297,6 +296,7 @@ export function ResultGrid(props: {
 
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={[
+          { label: "查看详情", onClick: () => props.onSelectRow?.(menu.r) },
           { label: editable ? "编辑" : "查看", onClick: () => openCell(menu.r, menu.c) },
           { label: "复制 INSERT 语句", onClick: () => props.onCopyInsertRow?.(menu.r) },
         ]} />
