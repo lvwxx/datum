@@ -1,12 +1,25 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen } from "lucide-react";
+import { Database, KeyRound, FolderOpen, X } from "lucide-react";
 import type { Connection, DbKind, Env } from "../../types";
 
 const blank: Connection = {
   id: "", name: "", kind: "pg", env: "local", host: "127.0.0.1",
   port: 5432, user: "postgres", database: "postgres",
 };
+
+const KINDS: { value: DbKind; label: string }[] = [
+  { value: "pg", label: "PostgreSQL" },
+  { value: "mysql", label: "MySQL" },
+  { value: "redis", label: "Redis" },
+  { value: "sqlite", label: "SQLite" },
+];
+
+const ENVS: { value: Env; color: string }[] = [
+  { value: "local", color: "var(--env-local)" },
+  { value: "staging", color: "var(--env-staging)" },
+  { value: "prod", color: "var(--env-prod)" },
+];
 
 export function ConnectionForm(props: {
   initial?: Connection;
@@ -17,7 +30,6 @@ export function ConnectionForm(props: {
   const [pw, setPw] = useState("");
   const upd = (k: keyof Connection, v: string | number) => setC({ ...c, [k]: v });
   const isEdit = !!props.initial;
-
   const isSqlite = c.kind === "sqlite";
 
   const onKind = (kind: DbKind) => {
@@ -48,17 +60,21 @@ export function ConnectionForm(props: {
     if (typeof selected === "string") upd("filePath", selected);
   };
 
-  const field = { display: "grid", gap: 5 } as const;
-  const caption = { fontSize: 12, color: "var(--fg)", fontWeight: 600 } as const; // 配置名:最深
+  const field = { display: "grid", gap: 6 } as const;
+  const caption = { fontSize: 12, color: "var(--fg-muted)", fontWeight: 600 } as const;
+  const KindIcon = c.kind === "redis" ? KeyRound : Database;
 
-  const primaryBtn: React.CSSProperties = {
-    background: "var(--accent)", color: "var(--on-accent)", border: 0, borderRadius: 9999,
-    padding: "9px 20px", cursor: "pointer", fontWeight: 700,
-  };
-  const ghostBtn: React.CSSProperties = {
-    background: "transparent", color: "var(--fg-muted)", border: "1px solid var(--border)",
-    borderRadius: 9999, padding: "9px 18px", cursor: "pointer",
-  };
+  const Field = (label: string, node: React.ReactNode) => (
+    <label style={field}>
+      <span style={caption}>{label}</span>
+      {node}
+    </label>
+  );
+  const Input = (k: keyof Connection, placeholder: string, extra?: React.InputHTMLAttributes<HTMLInputElement>) => (
+    <input className="form-input" placeholder={placeholder} value={String(c[k] ?? "")}
+      onChange={(e) => upd(k, e.target.value)}
+      autoCapitalize="none" autoCorrect="off" spellCheck={false} {...extra} />
+  );
 
   return (
     <form onSubmit={(e) => {
@@ -66,87 +82,86 @@ export function ConnectionForm(props: {
         const id = c.id || crypto.randomUUID();
         props.onSubmit({ ...c, id }, pw);
       }}
-      style={{ display: "grid", gap: 14, padding: 20 }}>
-      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--fg)" }}>{isEdit ? "编辑连接" : "新建连接"}</div>
+      style={{ display: "grid", gap: 16, padding: 20 }}>
 
-      <label style={field}>
+      {/* 头部:类型图标 + 标题 + 关闭 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ display: "flex", width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center", background: "var(--raised-bg)", flexShrink: 0 }}>
+          <KindIcon size={17} color="var(--accent-bright)" />
+        </span>
+        <div style={{ flex: 1, fontSize: 16, fontWeight: 700, color: "var(--fg)" }}>{isEdit ? "编辑连接" : "新建连接"}</div>
+        <button type="button" className="icon-btn" onClick={props.onCancel} title="关闭" aria-label="关闭"
+          style={{ width: 28, height: 28 }}><X size={16} /></button>
+      </div>
+
+      {/* 类型分段控件 */}
+      <div style={field}>
         <span style={caption}>类型</span>
-        <select value={c.kind} onChange={(e) => onKind(e.target.value as DbKind)}>
-          <option value="pg">PostgreSQL</option>
-          <option value="mysql">MySQL</option>
-          <option value="redis">Redis</option>
-          <option value="sqlite">SQLite</option>
-        </select>
-      </label>
+        <div className="seg" role="group" aria-label="类型">
+          {KINDS.map((k) => (
+            <button type="button" key={k.value} className={`seg-btn${c.kind === k.value ? " active" : ""}`}
+              aria-pressed={c.kind === k.value} onClick={() => onKind(k.value)}>{k.label}</button>
+          ))}
+        </div>
+      </div>
 
-      <label style={field}>
-        <span style={caption}>名称</span>
-        <input placeholder="例如 prod-pg" value={c.name} onChange={(e) => upd("name", e.target.value)}
-               autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
-      </label>
+      {Field("名称", Input("name", "例如 prod-pg", { required: true }))}
 
       {isSqlite ? (
-        <label style={field}>
-          <span style={caption}>文件路径</span>
+        Field("文件路径",
           <div style={{ display: "flex", gap: 6 }}>
-            <input style={{ flex: 1, minWidth: 0 }} placeholder="/绝对路径/到/数据库.db" value={c.filePath ?? ""}
-                   onChange={(e) => upd("filePath", e.target.value)}
-                   autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
+            <input className="form-input" style={{ flex: 1, minWidth: 0 }} placeholder="/绝对路径/到/数据库.db"
+              value={c.filePath ?? ""} onChange={(e) => upd("filePath", e.target.value)}
+              autoCapitalize="none" autoCorrect="off" spellCheck={false} required />
             <button type="button" onClick={pickFile} title="选择文件" aria-label="选择文件"
-                    style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center",
-                             background: "transparent", border: "1px solid var(--border)",
-                             borderRadius: 6, cursor: "pointer", padding: "0 11px" }}>
+              style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center",
+                background: "var(--raised-bg)", border: "1px solid transparent", borderRadius: 8, cursor: "pointer", padding: "0 11px", color: "var(--fg-soft)" }}>
               <FolderOpen size={16} />
             </button>
-          </div>
-        </label>
+          </div>,
+        )
       ) : (
         <>
-          <label style={field}>
+          {/* 环境分段控件(各环境用其徽章色)*/}
+          <div style={field}>
             <span style={caption}>环境</span>
-            <select value={c.env} onChange={(e) => upd("env", e.target.value as Env)}>
-              <option value="local">local</option>
-              <option value="staging">staging</option>
-              <option value="prod">prod</option>
-            </select>
-          </label>
+            <div className="seg" role="group" aria-label="环境">
+              {ENVS.map((e) => {
+                const active = c.env === e.value;
+                return (
+                  <button type="button" key={e.value} className="seg-btn" aria-pressed={active}
+                    onClick={() => upd("env", e.value)}
+                    style={active ? { color: e.color, fontWeight: 700, boxShadow: `inset 0 0 0 1px ${e.color}` } : undefined}>
+                    {e.value}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-          <label style={field}>
-            <span style={caption}>主机</span>
-            <input placeholder="127.0.0.1" value={c.host} onChange={(e) => upd("host", e.target.value)}
-                   autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 10 }}>
+            {Field("主机", Input("host", "127.0.0.1"))}
+            {Field("端口", <input className="form-input" type="number" placeholder="5432" value={c.port}
+              onChange={(e) => upd("port", Number(e.target.value))} />)}
+          </div>
 
-          <label style={field}>
-            <span style={caption}>端口</span>
-            <input type="number" placeholder="5432" value={c.port}
-                   onChange={(e) => upd("port", Number(e.target.value))} />
-          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {Field("用户", Input("user", "postgres"))}
+            {Field("数据库", Input("database", "postgres"))}
+          </div>
 
-          <label style={field}>
-            <span style={caption}>用户</span>
-            <input placeholder="postgres" value={c.user} onChange={(e) => upd("user", e.target.value)}
-                   autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-          </label>
-
-          <label style={field}>
-            <span style={caption}>数据库</span>
-            <input placeholder="postgres" value={c.database} onChange={(e) => upd("database", e.target.value)}
-                   autoCapitalize="none" autoCorrect="off" spellCheck={false} />
-          </label>
-
-          <label style={field}>
-            <span style={caption}>密码</span>
-            <input type="password"
-                   placeholder={isEdit ? "留空表示不修改密码" : "留空表示无密码"}
-                   value={pw} onChange={(e) => setPw(e.target.value)} />
-          </label>
+          {Field("密码",
+            <input className="form-input" type="password"
+              placeholder={isEdit ? "留空表示不修改密码" : "留空表示无密码"}
+              value={pw} onChange={(e) => setPw(e.target.value)} />)}
         </>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginTop: 4, justifyContent: "flex-end" }}>
-        <button type="button" onClick={props.onCancel} style={ghostBtn}>取消</button>
-        <button type="submit" style={primaryBtn}>保存</button>
+      {/* 底部:分隔线 + 操作按钮 */}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 2, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+        <button type="button" className="btn-pill" onClick={props.onCancel}
+          style={{ color: "var(--fg-muted)", border: "1px solid var(--border)", padding: "9px 18px" }}>取消</button>
+        <button type="submit" className="btn-pill btn-run" style={{ padding: "9px 22px" }}>保存</button>
       </div>
     </form>
   );
