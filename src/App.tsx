@@ -378,6 +378,16 @@ export default function App() {
     closeForm(); refresh();
   };
 
+  // 测试连接:无独立后端命令,仅对已保存(编辑中)的连接做一次真实连通性检查
+  const testConn = async () => {
+    if (!editConn) { toast.info("保存后即可测试连接"); return; }
+    try {
+      if (editConn.kind === "redis") await redisConnect(editConn.id);
+      else await relApi(editConn.kind).connect(editConn.id);
+      toast.success("连接成功");
+    } catch { toast.error("连接失败"); }
+  };
+
   const confirmDelete = async () => {
     if (!confirmDel) return;
     const delId = confirmDel.id;
@@ -589,12 +599,13 @@ export default function App() {
       </div>
 
       {formOpen && (
-        <Modal onClose={closeForm}>
+        <Modal onClose={closeForm} bare>
           <ConnectionForm
             key={editConn?.id ?? "new"}
             initial={editConn ?? undefined}
             onSubmit={onSubmit}
             onCancel={closeForm}
+            onTest={testConn}
           />
         </Modal>
       )}
