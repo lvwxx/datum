@@ -4,7 +4,7 @@ import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import type { ImperativePanelHandle } from "react-resizable-panels";
 import { useTheme } from "./theme/ThemeProvider";
 import { useStore } from "./state/store";
-import { listConnections, saveConnection, deleteConnection } from "./api/connections";
+import { listConnections, saveConnection, deleteConnection, testConnection } from "./api/connections";
 import { pgConnect, pgListObjects, pgQuery, pgTableDetail, pgCommitEdits } from "./api/pg";
 import type { QueryResult, TableDetail as Detail, CellEdit } from "./api/pg";
 import { sqliteConnect, sqliteListObjects, sqliteQuery, sqliteTableDetail, sqliteCommitEdits } from "./api/sqlite";
@@ -378,14 +378,18 @@ export default function App() {
     closeForm(); refresh();
   };
 
-  // 测试连接:无独立后端命令,仅对已保存(编辑中)的连接做一次真实连通性检查
-  const testConn = async () => {
-    if (!editConn) { toast.info("保存后即可测试连接"); return; }
+  // 测试连接:用表单当前填写的参数做一次真实连通性检查(不保存)
+  const testConn = async (conn: Connection, pw: string) => {
     try {
-      if (editConn.kind === "redis") await redisConnect(editConn.id);
-      else await relApi(editConn.kind).connect(editConn.id);
+      await testConnection({
+        kind: conn.kind, host: conn.host, port: conn.port, user: conn.user,
+        password: pw, database: conn.database, filePath: conn.filePath ?? null,
+      });
       toast.success("连接成功");
-    } catch { toast.error("连接失败"); }
+    } catch (e) {
+      const err = e as { message?: string; detail?: string };
+      toast.error(err?.message ? `${err.message}${err.detail ? `:${err.detail}` : ""}` : "连接失败");
+    }
   };
 
   const confirmDelete = async () => {

@@ -33,6 +33,24 @@ fn qerr(e: redis::RedisError) -> AppError {
     AppError::new(ErrorKind::Query, "Redis 命令失败").with_detail(e.to_string())
 }
 
+/// 用给定参数尝试建立一次连接以验证可达性与认证(不缓存)。
+pub async fn test_connect(host: &str, port: u16, user: &str, pass: &str, db: &str) -> AppResult<()> {
+    let dbn = db.trim().parse::<u8>().unwrap_or(0);
+    let auth = if !user.is_empty() {
+        format!("{user}:{pass}@")
+    } else if !pass.is_empty() {
+        format!(":{pass}@")
+    } else {
+        String::new()
+    };
+    let url = format!("redis://{auth}{host}:{port}/{dbn}");
+    let client = redis::Client::open(url)
+        .map_err(|e| AppError::new(ErrorKind::Connection, "无效的 Redis 连接串").with_detail(e.to_string()))?;
+    let _con = client.get_multiplexed_async_connection().await
+        .map_err(|e| AppError::new(ErrorKind::Connection, "连接 Redis 失败").with_detail(e.to_string()))?;
+    Ok(())
+}
+
 /// 字节转 UTF-8,非法字节用替换符(兼容二进制值)。
 fn lossy(b: Vec<u8>) -> String {
     String::from_utf8_lossy(&b).into_owned()

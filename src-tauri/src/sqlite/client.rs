@@ -32,6 +32,19 @@ fn cell(v: ValueRef<'_>) -> Option<String> {
     }
 }
 
+/// 验证 SQLite 文件可打开(不存在则报错,避免误建空库;不缓存)。
+pub fn test_connect(path: &str) -> AppResult<()> {
+    if path.is_empty() {
+        return Err(AppError::new(ErrorKind::Connection, "未指定 SQLite 文件路径"));
+    }
+    if !std::path::Path::new(path).exists() {
+        return Err(AppError::new(ErrorKind::Connection, "SQLite 文件不存在"));
+    }
+    SqliteConn::open(path)
+        .map(|_| ())
+        .map_err(|e| AppError::new(ErrorKind::Connection, "打开 SQLite 数据库失败").with_detail(e.to_string()))
+}
+
 impl SqlitePool {
     /// 打开(或创建)指定路径的 SQLite 文件并缓存到 id。
     pub fn connect(&self, id: &str, path: &str) -> AppResult<()> {
@@ -156,6 +169,12 @@ mod tests {
         let p = pool();
         let err = p.query("t", "SELECT * FROM no_such_table").unwrap_err();
         assert_eq!(err.kind, ErrorKind::Query);
+    }
+
+    #[test]
+    fn test_connect_rejects_missing_and_empty_path() {
+        assert_eq!(test_connect("").unwrap_err().kind, ErrorKind::Connection);
+        assert_eq!(test_connect("/no/such/file.sqlite").unwrap_err().kind, ErrorKind::Connection);
     }
 
     #[test]

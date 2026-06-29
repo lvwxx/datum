@@ -14,6 +14,16 @@ pub struct QueryResult {
 #[derive(Default)]
 pub struct PgPool { clients: Mutex<HashMap<String, Client>> }
 
+/// 用给定参数尝试建立一次连接以验证可达性与认证(不缓存)。
+pub async fn test_connect(host: &str, port: u16, user: &str, pass: &str, db: &str) -> AppResult<()> {
+    let mut cfg = Config::new();
+    cfg.host(host).port(port).user(user).password(pass).dbname(db);
+    // 建连成功(完成握手与认证)即视为连通;立即丢弃。
+    let (_client, _connection) = cfg.connect(NoTls).await
+        .map_err(|e| AppError::new(ErrorKind::Connection, "连接 PostgreSQL 失败").with_detail(e.to_string()))?;
+    Ok(())
+}
+
 impl PgPool {
     /// 用 Config 建立连接并缓存到 id。
     /// 用 Config(显式 setter)而非手拼连接串:空密码或含特殊字符的库名都能正确处理,

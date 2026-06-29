@@ -32,7 +32,7 @@ export function ConnectionForm(props: {
   initial?: Connection;
   onSubmit: (conn: Connection, password: string) => void;
   onCancel: () => void;
-  onTest?: () => void;
+  onTest?: (conn: Connection, password: string) => void;
 }) {
   const [c, setC] = useState<Connection>(props.initial ?? blank);
   const [pw, setPw] = useState("");
@@ -220,7 +220,7 @@ export function ConnectionForm(props: {
 
       {/* 底部 */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 28px 24px", marginTop: 6 }}>
-        <button type="button" className="btn-pill" onClick={props.onTest}
+        <button type="button" className="btn-pill" onClick={() => props.onTest?.(c, pw)}
           style={{ height: 38, padding: "0 18px", border: "1px solid var(--fg-faint)", background: "transparent", color: "var(--fg-soft)", fontSize: 13, fontWeight: 700, gap: 8 }}>
           <Activity size={15} /> 测试连接
         </button>

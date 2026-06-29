@@ -54,6 +54,23 @@ fn row_to_strings(row: &Row) -> Vec<Option<String>> {
     (0..row.len()).map(|i| row.as_ref(i).and_then(val_to_string)).collect()
 }
 
+/// 用给定参数尝试建立一次连接以验证可达性与认证(不缓存)。
+pub async fn test_connect(host: &str, port: u16, user: &str, pass: &str, db: &str) -> AppResult<()> {
+    let mut b = OptsBuilder::default()
+        .ip_or_hostname(host.to_string())
+        .tcp_port(port)
+        .user(Some(user.to_string()))
+        .db_name(Some(db.to_string()));
+    if !pass.is_empty() {
+        b = b.pass(Some(pass.to_string()));
+    }
+    let pool = Pool::new(Opts::from(b));
+    let conn = pool.get_conn().await.map_err(connerr)?;
+    drop(conn);
+    pool.disconnect().await.ok();
+    Ok(())
+}
+
 impl MyPool {
     pub async fn connect(&self, id: &str, host: &str, port: u16, user: &str, pass: &str, db: &str) -> AppResult<()> {
         let mut b = OptsBuilder::default()

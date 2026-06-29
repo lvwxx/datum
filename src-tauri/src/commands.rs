@@ -81,6 +81,26 @@ pub fn delete_connection(state: tauri::State<AppState>, id: String) -> AppResult
     state.repo().save(&all)
 }
 
+/// 用表单当前填写的参数(而非已保存配置)做一次真实连通性测试,不缓存、不落盘。
+#[tauri::command]
+pub async fn test_connection(
+    kind: String,
+    host: String,
+    port: u16,
+    user: String,
+    password: String,
+    database: String,
+    file_path: Option<String>,
+) -> AppResult<()> {
+    match kind.as_str() {
+        "pg" => crate::pg::client::test_connect(&host, port, &user, &password, &database).await,
+        "mysql" => crate::my::client::test_connect(&host, port, &user, &password, &database).await,
+        "redis" => crate::rds::client::test_connect(&host, port, &user, &password, &database).await,
+        "sqlite" => crate::sqlite::client::test_connect(file_path.as_deref().unwrap_or("")),
+        _ => Err(AppError::new(ErrorKind::Connection, "不支持的连接类型")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

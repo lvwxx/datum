@@ -33,6 +33,7 @@ pub fn run() {
             commands::list_connections,
             commands::save_connection,
             commands::delete_connection,
+            commands::test_connection,
             pg::commands::pg_connect,
             pg::commands::pg_list_objects,
             pg::commands::pg_query,
