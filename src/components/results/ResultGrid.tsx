@@ -5,6 +5,7 @@ import { Modal } from "../Modal";
 import { ContextMenu } from "../ContextMenu";
 import { copyToClipboard } from "../../lib/clipboard";
 import { toast } from "../Toast";
+import { classifyCell, colAlign } from "./cellStyle";
 
 const DEFAULT_W = 170;
 const MIN_W = 48;
@@ -34,35 +35,6 @@ function textWidth(text: string, weight: number, size: number, mono: boolean): n
   if (!ctx || !ctx.measureText) return text.length * size * (mono ? 0.6 : 0.52);
   ctx.font = `${weight} ${size}px ${mono ? MONO_FONT : UI_FONT}`;
   return ctx.measureText(text).width;
-}
-
-type Align = "left" | "right" | "center";
-
-// 按类型推断列对齐(表头与单元格共用)
-function colAlign(type: string | undefined): Align {
-  const t = (type ?? "").toLowerCase();
-  if (/bool/.test(t)) return "center";
-  if (/int|serial|numeric|decimal|real|double|float|money/.test(t)) return "right";
-  return "left";
-}
-
-// 按类型/值给单元格上色、决定是否等宽字体
-function classifyCell(value: string | null, type: string | undefined): { color: string; mono: boolean } {
-  if (value == null) return { color: "var(--fg-faint)", mono: true };
-  const t = (type ?? "").toLowerCase();
-  if (/bool/.test(t) || value === "true" || value === "false") {
-    const truthy = value === "true" || value === "t";
-    return { color: truthy ? "var(--fg-soft)" : "var(--negative)", mono: true };
-  }
-  if (/int|serial|numeric|decimal|real|double|float|money/.test(t) || /^-?\d+(\.\d+)?$/.test(value)) {
-    return { color: "var(--fg-muted)", mono: true };
-  }
-  if (/time|date/.test(t)) {
-    const empty = value.startsWith("0001-");
-    return { color: empty ? "var(--fg-faint)" : "var(--fg-soft)", mono: true };
-  }
-  if (/uuid|bytea/.test(t)) return { color: "var(--fg-faint)", mono: true };
-  return { color: "var(--fg-soft)", mono: false };
 }
 
 export function ResultGrid(props: {
@@ -224,7 +196,8 @@ export function ResultGrid(props: {
                   const dirty = props.dirtyKeys.has(`${pkValue}|${columns[ci]}`);
                   const bg = dirty ? "var(--dirty-bg)" : rowBg;
                   const align = colAlign(types[columns[ci]]);
-                  const { color, mono } = classifyCell(cellVal, types[columns[ci]]);
+                  const { color, mono, hash } = classifyCell(cellVal, types[columns[ci]]);
+                  const isNull = cellVal == null;
                   const leftBar = selected && ci === 0 ? "inset 2px 0 0 var(--accent)" : undefined;
                   const dirtyRing = dirty ? "inset 0 0 0 1px var(--accent)" : undefined;
                   return (
@@ -236,6 +209,8 @@ export function ResultGrid(props: {
                         style={{
                           height: ROW_H, padding: single ? "8px 16px" : "0 16px", boxSizing: "border-box",
                           background: bg, color, textAlign: align,
+                          fontStyle: isNull ? "italic" : undefined,
+                          letterSpacing: hash ? "0.03em" : undefined,
                           borderRight: "1px solid var(--border)",
                           borderBottom: "1px solid var(--border)",
                           boxShadow: dirtyRing ?? leftBar,
@@ -243,7 +218,7 @@ export function ResultGrid(props: {
                           overflow: "hidden", textOverflow: "ellipsis",
                           wordBreak: single ? "break-word" : undefined,
                         }}>
-                      {cellVal ?? <span style={{ color: "var(--fg-faint)" }}>NULL</span>}
+                      {cellVal ?? "NULL"}
                     </td>
                   );
                 })}

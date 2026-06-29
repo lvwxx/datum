@@ -30,6 +30,13 @@ export const THEMES: Record<ThemeName, Tokens> = {
     "--fg-muted": "#b3b3b3",
     "--fg-faint": "#7c7c7c",
 
+    // 结果单元格灰阶分级:主值 → 软值 → 次级 → 哈希块 → 凹陷
+    "--cell-strong": "#ededed",
+    "--cell": "#cfcfcf",
+    "--cell-dim": "#9a9a9a",
+    "--cell-hash": "#6e6e6e",
+    "--cell-null": "#585858",
+
     // 绿色 accent(仅功能性使用)
     "--accent": "#1db954",
     "--accent-bright": "#1ed760",
@@ -81,6 +88,13 @@ export const THEMES: Record<ThemeName, Tokens> = {
     "--fg-soft": "#4a4c52",
     "--fg-muted": "#5b5d63",
     "--fg-faint": "#9a9aa0",
+
+    // 结果单元格灰阶分级:主值 → 软值 → 次级 → 哈希块 → 凹陷
+    "--cell-strong": "#2e2e33",
+    "--cell": "#4a4c52",
+    "--cell-dim": "#6b6b70",
+    "--cell-hash": "#9a9aa0",
+    "--cell-null": "#b0b0b6",
 
     "--accent": "#1db954",
     "--accent-bright": "#159048",
