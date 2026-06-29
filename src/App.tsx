@@ -33,7 +33,8 @@ import { TabStrip } from "./components/chrome/TabStrip";
 import { StatusBar } from "./components/chrome/StatusBar";
 import { IconButton } from "./components/chrome/IconButton";
 import { toCsv, downloadText } from "./lib/csv";
-import { Plus } from "lucide-react";
+import { filterConnections } from "./lib/sidebarSearch";
+import { Plus, Search } from "lucide-react";
 import type { Connection, DbKind } from "./types";
 
 const PAGE_SIZE = 100;
@@ -92,11 +93,10 @@ const pageSql = (t: string, p: number, kind: DbKind, sort?: SortState) => {
 export default function App() {
   const { name, toggle } = useTheme();
   const store = useStore();
-  const { connections, activeId } = store;
+  const { connections, activeId, expandedConns, tablesByConn, connectedIds } = store;
   const [formOpen, setFormOpen] = useState(false);
   const [editConn, setEditConn] = useState<Connection | null>(null);
-  const [tables, setTables] = useState<string[]>([]);
-  const [treeOpen, setTreeOpen] = useState(true);
+  const [query, setQuery] = useState("");
   const [rightOpen, setRightOpen] = useState(true);
   const rightRef = useRef<ImperativePanelHandle>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -117,7 +117,7 @@ export default function App() {
   };
   const [menu, setMenu] = useState<{ c: Connection; x: number; y: number } | null>(null);
   const [confirmDel, setConfirmDel] = useState<Connection | null>(null);
-  const [tableMenu, setTableMenu] = useState<{ table: string; x: number; y: number } | null>(null);
+  const [tableMenu, setTableMenu] = useState<{ connId: string; table: string; x: number; y: number } | null>(null);
   const [colMenu, setColMenu] = useState<{ x: number; y: number } | null>(null);
   const [ddl, setDdl] = useState<{ table: string; sql: string; x: number; y: number } | null>(null);
   const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -157,19 +157,24 @@ export default function App() {
   const canNext = !!tab && tab.browseTable !== null && tab.result !== null && tab.result.rows.length === PAGE_SIZE;
   const canPrev = !!tab && tab.browseTable !== null && tab.page > 0;
 
-  const onActivate = async (id: string) => {
-    store.activate(id);
+  // 加载某连接的表/key 到缓存(成功才标记“已连接”;失败则下次展开重试)
+  const loadTables = async (id: string) => {
     const conn = connections.find((c) => c.id === id);
+    if (!conn) return;
     try {
-      if (conn?.kind === "redis") { await redisConnect(id); setTables(await redisScan(id, "*")); }
-      else { const r = relApi(conn?.kind ?? "pg"); await r.connect(id); setTables(await r.list(id)); }
-    } catch { setTables([]); }
+      let tbls: string[];
+      if (conn.kind === "redis") { await redisConnect(id); tbls = await redisScan(id, "*"); }
+      else { const r = relApi(conn.kind); await r.connect(id); tbls = await r.list(id); }
+      store.setTables(id, tbls);
+    } catch { /* 连接失败:保持未连接、不缓存 */ }
   };
 
-  const onPickConn = async (id: string) => {
-    if (id === activeId) { setTreeOpen((o) => !o); return; }
-    setTreeOpen(true);
-    await onActivate(id);
+  // 点连接行:切换展开/收起,并聚焦该连接(供 breadcrumb / 新建 tab 归属);首次展开时懒加载
+  const toggleConn = async (id: string) => {
+    const willExpand = !expandedConns[id];
+    store.setExpanded(id, willExpand);
+    store.activate(id);
+    if (willExpand && !tablesByConn[id]) await loadTables(id);
   };
 
   const toggleRight = () => {
@@ -178,39 +183,38 @@ export default function App() {
     if (p.isCollapsed()) p.expand(); else p.collapse();
   };
 
-  // 点表:每次都新开一个 tab
-  // 点表/key:每次都新开一个 tab(按连接类型分别处理)
-  const onSelectTable = async (t: string) => {
-    if (!activeId) return;
+  // 点表/key:在所属连接下每次都新开一个 tab(按连接类型分别处理)
+  const onSelectTable = async (connId: string, t: string) => {
     setDdl(null);
-    const kind: DbKind = connections.find((c) => c.id === activeId)?.kind ?? "pg";
+    store.activate(connId);
+    const kind: DbKind = connections.find((c) => c.id === connId)?.kind ?? "pg";
     const id = crypto.randomUUID();
     if (kind === "redis") {
       const fresh: Tab = {
-        id, connId: activeId, kind, title: t, table: t, sql: "",
+        id, connId, kind, title: t, table: t, sql: "",
         result: null, detail: null, redisDetail: null, page: 0, browseTable: null, dirty: {}, err: null, selectedRow: null, resultIsQuery: true, sort: null, elapsedMs: null,
       };
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
       try {
-        const kv = await redisGetKey(activeId, t);
-        const redisDetail = await redisKeyDetail(activeId, t);
+        const kv = await redisGetKey(connId, t);
+        const redisDetail = await redisKeyDetail(connId, t);
         patch(id, { result: { columns: kv.columns, rows: kv.rows, affected: null }, redisDetail });
       } catch (e) { patch(id, { err: JSON.stringify(e) }); }
     } else {
       const r = relApi(kind);
       const sql = pageSql(t, 0, kind);
       const fresh: Tab = {
-        id, connId: activeId, kind, title: t, table: t, sql,
+        id, connId, kind, title: t, table: t, sql,
         result: null, detail: null, redisDetail: null, page: 0, browseTable: t, dirty: {}, err: null, selectedRow: null, resultIsQuery: true, sort: null, elapsedMs: null,
       };
       setTabs((ts) => [...ts, fresh]);
       setActiveTabId(id);
       try {
         const t0 = performance.now();
-        const result = await r.query(activeId, sql);
+        const result = await r.query(connId, sql);
         const elapsedMs = Math.round(performance.now() - t0);
-        const detail = await r.detail(activeId, t);
+        const detail = await r.detail(connId, t);
         patch(id, { result, detail, elapsedMs });
       } catch (e) { patch(id, { err: JSON.stringify(e) }); }
     }
@@ -294,14 +298,10 @@ export default function App() {
     } catch (e) { patch(tab.id, { err: JSON.stringify(e) }); }
   };
 
-  // 刷新左侧表/KEY 列表
+  // 刷新左侧表/KEY 列表(重新拉取聚焦连接的表到缓存)
   const refreshTables = async () => {
     if (!activeId) return;
-    const conn = connections.find((c) => c.id === activeId);
-    try {
-      if (conn?.kind === "redis") setTables(await redisScan(activeId, "*"));
-      else setTables(await relApi(conn?.kind ?? "pg").list(activeId));
-    } catch { /* 忽略 */ }
+    await loadTables(activeId);
   };
 
   // 刷新当前 tab 的结构与结果
@@ -382,6 +382,7 @@ export default function App() {
     if (!confirmDel) return;
     const delId = confirmDel.id;
     await deleteConnection(delId);
+    store.removeConnState(delId);
     const next = tabs.filter((t) => t.connId !== delId);
     setTabs(next);
     if (!next.find((t) => t.id === activeTabId)) setActiveTabId(next[0]?.id ?? null);
@@ -390,15 +391,14 @@ export default function App() {
   };
 
   // 查看建表语句:取该表详情,合成 DDL,弹出锚定在表名旁的浮层
-  const showDdl = async (table: string, x: number, y: number) => {
-    if (!activeId) return;
-    const kind = connections.find((c) => c.id === activeId)?.kind ?? "pg";
+  const showDdl = async (connId: string, table: string, x: number, y: number) => {
+    const kind = connections.find((c) => c.id === connId)?.kind ?? "pg";
     try {
       if (kind === "mysql") {
-        const r = await myQuery(activeId, `SHOW CREATE TABLE \`${table.replace(/`/g, "``")}\``);
+        const r = await myQuery(connId, `SHOW CREATE TABLE \`${table.replace(/`/g, "``")}\``);
         setDdl({ table, sql: r.rows[0]?.[1] ?? "", x, y });
       } else {
-        const detail = await relApi(kind).detail(activeId, table);
+        const detail = await relApi(kind).detail(connId, table);
         setDdl({ table, sql: buildCreateTable(table, detail), x, y });
       }
     } catch { /* 忽略 */ }
@@ -436,20 +436,35 @@ export default function App() {
               <span style={{ color: "var(--fg-faint)", fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase" }}>连接</span>
               <IconButton size={26} title="新建连接" onClick={openNew} style={{ borderRadius: "50%" }}><Plus size={16} /></IconButton>
             </div>
+            <div style={{ margin: "0 8px 8px", position: "relative", display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <Search size={15} style={{ position: "absolute", left: 11, color: "var(--fg-faint)", pointerEvents: "none" }} />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜索连接 / 表"
+                aria-label="搜索连接 / 表"
+                style={{
+                  width: "100%", height: 32, padding: "0 12px 0 34px",
+                  background: "var(--raised-bg)", border: "none", borderRadius: 9999,
+                  color: "var(--fg)", fontSize: 13,
+                }}
+              />
+            </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
               <ConnectionList
-                connections={connections}
+                views={filterConnections(connections, tablesByConn, expandedConns, query)}
                 activeId={activeId}
-                expandedId={treeOpen ? activeId : null}
-                onPick={onPickConn}
-                onEdit={openEdit}
+                connectedIds={connectedIds}
+                onToggle={toggleConn}
                 onContext={(c, x, y) => setMenu({ c, x, y })}
-                renderUnder={(c) =>
-                  c.id === activeId && treeOpen
-                    ? <ObjectTree tables={tables} active={tab?.table ?? null} contextTable={tableMenu?.table ?? null}
-                        onSelect={onSelectTable}
-                        onContext={(table, x, y) => setTableMenu({ table, x, y })} />
-                    : null}
+                renderUnder={(c, view) =>
+                  <ObjectTree
+                    tables={view.tables}
+                    active={tab?.connId === c.id ? (tab?.table ?? null) : null}
+                    contextTable={tableMenu?.connId === c.id ? tableMenu.table : null}
+                    onSelect={(t) => onSelectTable(c.id, t)}
+                    onContext={(table, x, y) => setTableMenu({ connId: c.id, table, x, y })}
+                  />}
               />
             </div>
           </aside>
@@ -596,11 +611,11 @@ export default function App() {
       {tableMenu && (
         <ContextMenu x={tableMenu.x} y={tableMenu.y} onClose={() => setTableMenu(null)}
           items={
-            connections.find((c) => c.id === activeId)?.kind === "redis"
+            connections.find((c) => c.id === tableMenu.connId)?.kind === "redis"
               ? [{ label: "复制 key 名", onClick: () => copyWithToast(tableMenu.table) }]
               : [
                   { label: "复制表名", onClick: () => copyWithToast(tableMenu.table) },
-                  { label: "查看建表语句", onClick: () => showDdl(tableMenu.table, tableMenu.x, tableMenu.y) },
+                  { label: "查看建表语句", onClick: () => showDdl(tableMenu.connId, tableMenu.table, tableMenu.x, tableMenu.y) },
                 ]
           } />
       )}

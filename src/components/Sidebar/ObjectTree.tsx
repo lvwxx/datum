@@ -11,7 +11,7 @@ export function ObjectTree(props: {
   onContext?: (t: string, x: number, y: number) => void;
 }) {
   return (
-    <div style={{ padding: "4px 8px 12px" }}>
+    <div style={{ padding: "2px 8px 6px" }}>
       {props.tables.map((t) => {
         const active = t === props.active;
         const ctx = t === props.contextTable;
@@ -26,19 +26,19 @@ export function ObjectTree(props: {
               props.onContext?.(t, r.right - 6, r.top - 4);
             }}
             style={{
-              position: "relative", height: 32, marginBottom: 1, borderRadius: 4,
-              padding: "0 12px 0 16px", cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 10, overflow: "hidden",
+              position: "relative", height: 30, marginBottom: 1, borderRadius: 4,
+              padding: "0 12px 0 38px", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 9, overflow: "hidden",
               boxShadow: ctx ? "inset 0 0 0 1px var(--accent)" : undefined,
             }}
           >
             {active && (
               <span style={{
-                position: "absolute", left: 0, top: 6, bottom: 6, width: 3,
+                position: "absolute", left: 0, top: 5, bottom: 5, width: 3,
                 background: "var(--accent)", borderRadius: "0 3px 3px 0",
               }} />
             )}
-            <TableIcon size={14} color={active ? "var(--fg)" : "var(--fg-faint)"} style={{ flexShrink: 0 }} />
+            <TableIcon size={13} color={active ? "var(--fg)" : "var(--fg-faint)"} style={{ flexShrink: 0 }} />
             <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: active ? 700 : 400, color: active ? "var(--fg)" : "var(--fg-soft)" }}>
               <MiddleEllipsis text={t} />
             </span>
