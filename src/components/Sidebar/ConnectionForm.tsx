@@ -42,21 +42,38 @@ export function ConnectionForm(props: {
   const [showPw, setShowPw] = useState(false);
   const [test, setTest] = useState<{ status: TestStatus; ms: number; msg: string }>({ status: "idle", ms: 0, msg: "" });
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const attemptRef = useRef(0);
   useEffect(() => () => { if (resetTimer.current) clearTimeout(resetTimer.current); }, []);
+
+  const TEST_TIMEOUT_MS = 10000;
 
   const runTest = async () => {
     if (test.status === "testing" || !props.onTest) return;
     if (resetTimer.current) clearTimeout(resetTimer.current);
+    const attempt = ++attemptRef.current;
     setTest({ status: "testing", ms: 0, msg: "" });
     const t0 = performance.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const probe = props.onTest(c, pw);
+    probe.catch(() => {}); // 超时判负后,后台真实结果不再处理,避免未捕获拒绝
     try {
-      await props.onTest(c, pw);
+      await Promise.race([
+        probe,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject({ message: "连接超时", detail: `${TEST_TIMEOUT_MS / 1000} 秒内未能建立连接` }), TEST_TIMEOUT_MS);
+        }),
+      ]);
+      if (attempt !== attemptRef.current) return; // 已被新一次测试取代
       setTest({ status: "success", ms: Math.round(performance.now() - t0), msg: "" });
     } catch (e) {
+      if (attempt !== attemptRef.current) return;
       const err = e as { message?: string; detail?: string };
       const msg = err?.message ? `${err.message}${err.detail ? ` · ${err.detail}` : ""}` : "无法连接,请检查配置";
       setTest({ status: "error", ms: 0, msg });
+    } finally {
+      if (timer) clearTimeout(timer);
     }
+    // 结果出来后按钮即恢复可点击(非 testing 态);几秒后淡回 idle
     resetTimer.current = setTimeout(() => setTest((t) => ({ ...t, status: "idle" })), 4000);
   };
   const upd = (k: keyof Connection, v: string | number) => setC({ ...c, [k]: v });

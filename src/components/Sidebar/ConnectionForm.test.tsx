@@ -1,5 +1,5 @@
 import { test, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ConnectionForm } from "./ConnectionForm";
 
 test("type dropdown switches kind (and default port); env segment sets env; submit carries both", () => {
@@ -42,6 +42,23 @@ test("test connection: rejects -> error state showing the real message", async (
   fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
   expect(await screen.findByText("连接失败")).toBeInTheDocument();
   expect(await screen.findByText(/connection refused/)).toBeInTheDocument();
+});
+
+test("test connection times out after 10s -> error, button clickable again", async () => {
+  vi.useFakeTimers();
+  try {
+    // onTest never settles -> only the 10s timeout can end it
+    render(<ConnectionForm onSubmit={() => {}} onCancel={() => {}} onTest={() => new Promise<void>(() => {})} />);
+    fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
+    expect(screen.getByText("测试中…")).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(screen.getByText("连接失败")).toBeInTheDocument();
+    expect(screen.getByText(/连接超时/)).toBeInTheDocument();
+    // 不再处于 testing(可再次点击)
+    expect(screen.queryByText("测试中…")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("selecting SQLite reveals the file-path field and hides host", () => {
