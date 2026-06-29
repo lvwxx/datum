@@ -15,11 +15,7 @@ const KINDS: { value: DbKind; label: string }[] = [
   { value: "sqlite", label: "SQLite" },
 ];
 
-const ENVS: { value: Env; color: string }[] = [
-  { value: "local", color: "var(--env-local)" },
-  { value: "staging", color: "var(--env-staging)" },
-  { value: "prod", color: "var(--env-prod)" },
-];
+const ENVS: Env[] = ["local", "staging", "prod"];
 
 export function ConnectionForm(props: {
   initial?: Connection;
@@ -94,18 +90,14 @@ export function ConnectionForm(props: {
           style={{ width: 28, height: 28 }}><X size={16} /></button>
       </div>
 
-      {/* 类型分段控件 */}
-      <div style={field}>
-        <span style={caption}>类型</span>
-        <div className="seg" role="group" aria-label="类型">
-          {KINDS.map((k) => (
-            <button type="button" key={k.value} className={`seg-btn${c.kind === k.value ? " active" : ""}`}
-              aria-pressed={c.kind === k.value} onClick={() => onKind(k.value)}>{k.label}</button>
-          ))}
-        </div>
+      {/* 类型 + 名称 同行 */}
+      <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: 10 }}>
+        {Field("类型",
+          <select className="form-input" value={c.kind} onChange={(e) => onKind(e.target.value as DbKind)}>
+            {KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+          </select>)}
+        {Field("名称", Input("name", "例如 prod-pg", { required: true }))}
       </div>
-
-      {Field("名称", Input("name", "例如 prod-pg", { required: true }))}
 
       {isSqlite ? (
         Field("文件路径",
@@ -122,22 +114,10 @@ export function ConnectionForm(props: {
         )
       ) : (
         <>
-          {/* 环境分段控件(各环境用其徽章色)*/}
-          <div style={field}>
-            <span style={caption}>环境</span>
-            <div className="seg" role="group" aria-label="环境">
-              {ENVS.map((e) => {
-                const active = c.env === e.value;
-                return (
-                  <button type="button" key={e.value} className="seg-btn" aria-pressed={active}
-                    onClick={() => upd("env", e.value)}
-                    style={active ? { color: e.color, fontWeight: 700, boxShadow: `inset 0 0 0 1px ${e.color}` } : undefined}>
-                    {e.value}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {Field("环境",
+            <select className="form-input" value={c.env} onChange={(e) => upd("env", e.target.value as Env)}>
+              {ENVS.map((e) => <option key={e} value={e}>{e}</option>)}
+            </select>)}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 10 }}>
             {Field("主机", Input("host", "127.0.0.1"))}
